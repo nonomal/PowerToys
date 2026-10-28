@@ -19,6 +19,7 @@ namespace Microsoft.PowerToys.Settings.UI.Library
             ErrorDownloading,
             ReadyToDownload,
             ReadyToInstall,
+            NetworkError,
         }
 
         // Gets or sets a value of the updating state
@@ -36,6 +37,9 @@ namespace Microsoft.PowerToys.Settings.UI.Library
         // Gets or sets a value of the updating state
         [JsonPropertyName("downloadedInstallerFilename")]
         public string DownloadedInstallerFilename { get; set; }
+
+        [JsonPropertyName("isPrerelease")]
+        public bool IsPrerelease { get; set; }
 
         // Non-localizable strings: Files
         public const string SettingsFilePath = "\\Microsoft\\PowerToys\\";
@@ -67,22 +71,32 @@ namespace Microsoft.PowerToys.Settings.UI.Library
         {
             get
             {
+                var dt = LastCheckedDateTime;
+                return dt?.ToString(CultureInfo.CurrentCulture) ?? string.Empty;
+            }
+        }
+
+        [JsonIgnore]
+        public DateTime? LastCheckedDateTime
+        {
+            get
+            {
                 try
                 {
                     if (LastCheckedDate == null)
                     {
-                        return string.Empty;
+                        return null;
                     }
 
                     long seconds = long.Parse(LastCheckedDate, CultureInfo.CurrentCulture);
                     var date = DateTimeOffset.FromUnixTimeSeconds(seconds).UtcDateTime;
-                    return date.ToLocalTime().ToString(CultureInfo.CurrentCulture);
+                    return date.ToLocalTime();
                 }
                 catch (Exception)
                 {
                 }
 
-                return string.Empty;
+                return null;
             }
         }
 
@@ -101,7 +115,7 @@ namespace Microsoft.PowerToys.Settings.UI.Library
             {
                 try
                 {
-                    Stream inputStream = fileSystem.File.Open(file, FileMode.Open);
+                    FileSystemStream inputStream = fileSystem.File.Open(file, FileMode.Open);
                     StreamReader reader = new StreamReader(inputStream);
                     string data = reader.ReadToEnd();
                     inputStream.Close();

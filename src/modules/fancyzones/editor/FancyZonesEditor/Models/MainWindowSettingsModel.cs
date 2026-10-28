@@ -2,10 +2,12 @@
 // The Microsoft Corporation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+
 using FancyZonesEditor.Models;
 
 namespace FancyZonesEditor
@@ -58,16 +60,16 @@ namespace FancyZonesEditor
             var columnsModel = new GridLayoutModel(Properties.Resources.Template_Layout_Columns, LayoutType.Columns)
             {
                 Rows = 1,
-                RowPercents = new List<int>(1) { GridLayoutModel.GridMultiplier },
             };
+            columnsModel.RowPercents.Add(GridLayoutModel.GridMultiplier);
             columnsModel.InitTemplateZones();
             TemplateModels.Insert((int)LayoutType.Columns, columnsModel);
 
             var rowsModel = new GridLayoutModel(Properties.Resources.Template_Layout_Rows, LayoutType.Rows)
             {
                 Columns = 1,
-                ColumnPercents = new List<int>(1) { GridLayoutModel.GridMultiplier },
             };
+            rowsModel.ColumnPercents.Add(GridLayoutModel.GridMultiplier);
             rowsModel.InitTemplateZones();
             TemplateModels.Insert((int)LayoutType.Rows, rowsModel);
 
@@ -80,8 +82,8 @@ namespace FancyZonesEditor
             TemplateModels.Insert((int)LayoutType.PriorityGrid, priorityGridModel);
 
             // set default layouts
+            DefaultLayouts.Set(rowsModel, MonitorConfigurationType.Vertical);
             DefaultLayouts.Set(priorityGridModel, MonitorConfigurationType.Horizontal);
-            DefaultLayouts.Set(priorityGridModel, MonitorConfigurationType.Vertical);
         }
 
         // IsShiftKeyPressed - is the shift key currently being held down
@@ -134,37 +136,28 @@ namespace FancyZonesEditor
 
         public static IList<LayoutModel> TemplateModels { get; } = new List<LayoutModel>(6);
 
-        public static ObservableCollection<LayoutModel> CustomModels
+        public static ObservableCollection<LayoutModel> CustomModels { get; } = new ObservableCollection<LayoutModel>();
+
+        public static void SetCustomModels(IEnumerable<LayoutModel> models)
         {
-            get
+            foreach (LayoutModel model in CustomModels)
             {
-                return _customModels;
+                LayoutHotkeys.PropertyChanged -= model.LayoutHotkeys_PropertyChanged;
             }
 
-            set
+            CustomModels.Clear();
+            foreach (LayoutModel model in models)
             {
-                foreach (LayoutModel model in _customModels)
-                {
-                    LayoutHotkeys.PropertyChanged -= model.LayoutHotkeys_PropertyChanged;
-                }
-
-                _customModels.Clear();
-                _customModels = value;
-
-                foreach (LayoutModel model in _customModels)
-                {
-                    LayoutHotkeys.PropertyChanged += model.LayoutHotkeys_PropertyChanged;
-                }
+                CustomModels.Add(model);
+                LayoutHotkeys.PropertyChanged += model.LayoutHotkeys_PropertyChanged;
             }
         }
-
-        private static ObservableCollection<LayoutModel> _customModels = new ObservableCollection<LayoutModel>();
 
         public static int CustomModelsCount
         {
             get
             {
-                return _customModels.Count;
+                return CustomModels.Count;
             }
         }
 
@@ -231,7 +224,7 @@ namespace FancyZonesEditor
             {
                 foreach (LayoutModel model in CustomModels)
                 {
-                    if (model.Uuid == currentApplied.ZonesetUuid.ToUpperInvariant())
+                    if (string.Equals(model.Uuid, currentApplied.ZonesetUuid, StringComparison.OrdinalIgnoreCase))
                     {
                         // found match
                         foundModel = model;
@@ -261,36 +254,10 @@ namespace FancyZonesEditor
                 }
             }
 
-            if (foundModel == null)
-            {
-                foundModel = TemplateModels[(int)LayoutType.PriorityGrid];
-            }
-
             SetSelectedModel(foundModel);
             SetAppliedModel(foundModel);
             FirePropertyChanged(nameof(IsCustomLayoutActive));
             return foundModel;
-        }
-
-        public void RestoreSelectedModel(LayoutModel model)
-        {
-            if (SelectedModel == null || model == null)
-            {
-                return;
-            }
-
-            SelectedModel.SensitivityRadius = model.SensitivityRadius;
-            SelectedModel.TemplateZoneCount = model.TemplateZoneCount;
-            SelectedModel.IsSelected = model.IsSelected;
-            SelectedModel.IsApplied = model.IsApplied;
-            SelectedModel.Name = model.Name;
-            SelectedModel.QuickKey = model.QuickKey;
-
-            if (model is GridLayoutModel grid)
-            {
-                ((GridLayoutModel)SelectedModel).Spacing = grid.Spacing;
-                ((GridLayoutModel)SelectedModel).ShowSpacing = grid.ShowSpacing;
-            }
         }
 
         public void SetSelectedModel(LayoutModel model)

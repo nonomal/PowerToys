@@ -9,7 +9,7 @@ namespace Microsoft.PowerToys.Run.Plugin.WindowsSettings
     /// <summary>
     /// A windows setting
     /// </summary>
-    internal class WindowsSetting
+    internal sealed class WindowsSetting
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="WindowsSetting"/> class.
@@ -48,7 +48,7 @@ namespace Microsoft.PowerToys.Run.Plugin.WindowsSettings
         public IEnumerable<string>? AltNames { get; set; }
 
         /// <summary>
-        /// Gets or sets a additional note of this settings.
+        /// Gets or sets an additional note of this settings.
         /// <para>(e.g. why is not supported on your system)</para>
         /// </summary>
         public string? Note { get; set; }

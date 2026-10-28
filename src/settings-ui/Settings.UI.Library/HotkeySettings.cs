@@ -2,16 +2,32 @@
 // The Microsoft Corporation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json.Serialization;
+using ManagedCommon;
 using Microsoft.PowerToys.Settings.UI.Library.Utilities;
 
 namespace Microsoft.PowerToys.Settings.UI.Library
 {
-    public class HotkeySettings
+    public record HotkeySettings : ICmdLineRepresentable, INotifyPropertyChanged
     {
         private const int VKTAB = 0x09;
+        private bool _hasConflict;
+        private string _conflictDescription;
+        private bool _isSystemConflict;
+        private bool _ignoreConflict;
+
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void OnPropertyChanged([CallerMemberName] string propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
 
         public HotkeySettings()
         {
@@ -20,6 +36,8 @@ namespace Microsoft.PowerToys.Settings.UI.Library
             Alt = false;
             Shift = false;
             Code = 0;
+
+            HasConflict = false;
         }
 
         /// <summary>
@@ -37,11 +55,68 @@ namespace Microsoft.PowerToys.Settings.UI.Library
             Alt = alt;
             Shift = shift;
             Code = code;
+            HasConflict = false;
         }
 
-        public HotkeySettings Clone()
+        [JsonIgnore]
+        public bool IgnoreConflict
         {
-            return new HotkeySettings(Win, Ctrl, Alt, Shift, Code);
+            get => _ignoreConflict;
+            set
+            {
+                if (_ignoreConflict != value)
+                {
+                    _ignoreConflict = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        [JsonIgnore]
+        public bool HasConflict
+        {
+            get => _hasConflict;
+            set
+            {
+                if (_hasConflict != value)
+                {
+                    _hasConflict = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        [JsonIgnore]
+        public string ConflictDescription
+        {
+            get => _ignoreConflict ? null : _conflictDescription;
+            set
+            {
+                if (_conflictDescription != value)
+                {
+                    _conflictDescription = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        [JsonIgnore]
+        public bool IsSystemConflict
+        {
+            get => _isSystemConflict;
+            set
+            {
+                if (_isSystemConflict != value)
+                {
+                    _isSystemConflict = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public virtual void UpdateConflictStatus()
+        {
+            Logger.LogInfo($"{this.ToString()}");
         }
 
         [JsonPropertyName("win")]
@@ -122,9 +197,7 @@ namespace Microsoft.PowerToys.Settings.UI.Library
 
             if (Shift)
             {
-                shortcutList.Add("Shift");
-
-                // shortcutList.Add(16); // The Shift key or button.
+                shortcutList.Add(16); // The Shift key or button.
             }
 
             if (Code > 0)
@@ -175,6 +248,73 @@ namespace Microsoft.PowerToys.Settings.UI.Library
             }
 
             return false;
+        }
+
+        public static bool TryParseFromCmd(string cmd, out object result)
+        {
+            bool win = false, ctrl = false, alt = false, shift = false;
+            int code = 0;
+
+            var parts = cmd.Split('+');
+            foreach (var part in parts)
+            {
+                switch (part.Trim().ToLower(CultureInfo.InvariantCulture))
+                {
+                    case "win":
+                        win = true;
+                        break;
+                    case "ctrl":
+                        ctrl = true;
+                        break;
+                    case "alt":
+                        alt = true;
+                        break;
+                    case "shift":
+                        shift = true;
+                        break;
+                    default:
+                        if (!TryParseKeyCode(part, out code))
+                        {
+                            result = null;
+                            return false;
+                        }
+
+                        break;
+                }
+            }
+
+            result = new HotkeySettings(win, ctrl, alt, shift, code);
+            return true;
+        }
+
+        private static bool TryParseKeyCode(string key, out int keyCode)
+        {
+            // ASCII symbol
+            if (key.Length == 1 && char.IsLetterOrDigit(key[0]))
+            {
+                keyCode = char.ToUpper(key[0], CultureInfo.InvariantCulture);
+                return true;
+            }
+
+            // VK code
+            else if (key.Length == 4 && key.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            {
+                return int.TryParse(key.AsSpan(2), NumberStyles.HexNumber, null, out keyCode);
+            }
+
+            // Alias
+            else
+            {
+                keyCode = (int)Utilities.Helper.GetKeyValue(key);
+                return keyCode != 0;
+            }
+        }
+
+        public bool TryToCmdRepresentable(out string result)
+        {
+            result = ToString();
+            result = result.Replace(" ", null);
+            return true;
         }
     }
 }

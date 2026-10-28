@@ -3,23 +3,25 @@
 // See the LICENSE file in the project root for more information.
 
 using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using global::PowerToys.GPOWrapper;
+using ManagedCommon;
+using Microsoft.PowerToys.Settings.UI.Helpers;
 using Microsoft.PowerToys.Settings.UI.Library;
 using Microsoft.PowerToys.Settings.UI.Library.Helpers;
 using Microsoft.PowerToys.Settings.UI.Library.Interfaces;
-using Microsoft.PowerToys.Settings.UI.Library.Utilities;
 using Microsoft.PowerToys.Settings.UI.Library.ViewModels.Commands;
 
 namespace Microsoft.PowerToys.Settings.UI.ViewModels
 {
-    public class FancyZonesViewModel : Observable
+    public partial class FancyZonesViewModel : PageViewModelBase
     {
-        private ISettingsUtils SettingsUtils { get; set; }
+        protected override string ModuleName => FancyZonesSettings.ModuleName;
+
+        private SettingsUtils SettingsUtils { get; set; }
 
         private GeneralSettings GeneralSettingsConfig { get; set; }
-
-        private const string ModuleName = FancyZonesSettings.ModuleName;
 
         public ButtonClickCommand LaunchEditorEventHandler { get; set; }
 
@@ -46,27 +48,18 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
 
         public FancyZonesViewModel(SettingsUtils settingsUtils, ISettingsRepository<GeneralSettings> settingsRepository, ISettingsRepository<FancyZonesSettings> moduleSettingsRepository, Func<string, int> ipcMSGCallBackFunc, string configFileSubfolder = "")
         {
-            if (settingsUtils == null)
-            {
-                throw new ArgumentNullException(nameof(settingsUtils));
-            }
+            ArgumentNullException.ThrowIfNull(settingsUtils);
 
             SettingsUtils = settingsUtils;
 
             // To obtain the general settings configurations of PowerToys Settings.
-            if (settingsRepository == null)
-            {
-                throw new ArgumentNullException(nameof(settingsRepository));
-            }
+            ArgumentNullException.ThrowIfNull(settingsRepository);
 
             GeneralSettingsConfig = settingsRepository.SettingsConfig;
             settingsConfigFileFolder = configFileSubfolder;
 
             // To obtain the settings configurations of Fancy zones.
-            if (moduleSettingsRepository == null)
-            {
-                throw new ArgumentNullException(nameof(moduleSettingsRepository));
-            }
+            ArgumentNullException.ThrowIfNull(moduleSettingsRepository);
 
             Settings = moduleSettingsRepository.SettingsConfig;
 
@@ -74,11 +67,13 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
 
             _shiftDrag = Settings.Properties.FancyzonesShiftDrag.Value;
             _mouseSwitch = Settings.Properties.FancyzonesMouseSwitch.Value;
+            _mouseMiddleButtonSpanningMultipleZones = Settings.Properties.FancyzonesMouseMiddleClickSpanningMultipleZones.Value;
+            _mouseWheelLayoutSwitch = Settings.Properties.FancyzonesMouseWheelLayoutSwitch.Value;
             _overrideSnapHotkeys = Settings.Properties.FancyzonesOverrideSnapHotkeys.Value;
             _moveWindowsAcrossMonitors = Settings.Properties.FancyzonesMoveWindowsAcrossMonitors.Value;
             _moveWindowBehaviour = Settings.Properties.FancyzonesMoveWindowsBasedOnPosition.Value ? MoveWindowBehaviour.MoveWindowBasedOnPosition : MoveWindowBehaviour.MoveWindowBasedOnZoneIndex;
             _overlappingZonesAlgorithm = (OverlappingZonesAlgorithm)Settings.Properties.FancyzonesOverlappingZonesAlgorithm.Value;
-            _displayChangemoveWindows = Settings.Properties.FancyzonesDisplayChangeMoveWindows.Value;
+            _displayOrWorkAreaChangeMoveWindows = Settings.Properties.FancyzonesDisplayOrWorkAreaChangeMoveWindows.Value;
             _zoneSetChangeMoveWindows = Settings.Properties.FancyzonesZoneSetChangeMoveWindows.Value;
             _appLastZoneMoveWindows = Settings.Properties.FancyzonesAppLastZoneMoveWindows.Value;
             _openWindowOnActiveMonitor = Settings.Properties.FancyzonesOpenWindowOnActiveMonitor.Value;
@@ -96,12 +91,15 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             _excludedApps = Settings.Properties.FancyzonesExcludedApps.Value;
             _systemTheme = Settings.Properties.FancyzonesSystemTheme.Value;
             _showZoneNumber = Settings.Properties.FancyzonesShowZoneNumber.Value;
-            EditorHotkey = Settings.Properties.FancyzonesEditorHotkey.Value;
             _windowSwitching = Settings.Properties.FancyzonesWindowSwitching.Value;
+            _monitorRotation = Settings.Properties.FancyzonesMonitorRotation.Value;
+
+            EditorHotkey = Settings.Properties.FancyzonesEditorHotkey.Value;
             NextTabHotkey = Settings.Properties.FancyzonesNextTabHotkey.Value;
             PrevTabHotkey = Settings.Properties.FancyzonesPrevTabHotkey.Value;
+            MonitorRotationHotkey = Settings.Properties.FancyzonesMonitorRotationHotkey.Value;
 
-            // set the callback functions value to hangle outgoing IPC message.
+            // set the callback functions value to handle outgoing IPC message.
             SendConfigMSG = ipcMSGCallBackFunc;
 
             string inactiveColor = Settings.Properties.FancyzonesInActiveColor.Value;
@@ -116,6 +114,32 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             string numberColor = Settings.Properties.FancyzonesNumberColor.Value;
             _zoneNumberColor = !string.IsNullOrEmpty(numberColor) ? numberColor : ConfigDefaults.DefaultFancyzonesNumberColor;
 
+            _layoutNameLabelEnabled = Settings.Properties.FancyzonesLayoutNameLabelEnabled.Value;
+            _layoutNameLabelPlacement = Settings.Properties.FancyzonesLayoutNameLabelPlacement.Value;
+
+            string layoutNameLabelTextColor = Settings.Properties.FancyzonesLayoutNameLabelTextColor.Value;
+            _layoutNameLabelTextColor = !string.IsNullOrEmpty(layoutNameLabelTextColor) ? layoutNameLabelTextColor : "#FFFFFF";
+
+            string layoutNameLabelBackgroundColor = Settings.Properties.FancyzonesLayoutNameLabelBackgroundColor.Value;
+            _layoutNameLabelBackgroundColor = !string.IsNullOrEmpty(layoutNameLabelBackgroundColor) ? layoutNameLabelBackgroundColor : "#262626";
+
+            _layoutNameLabelFontSize = Settings.Properties.FancyzonesLayoutNameLabelFontSize.Value;
+            _layoutNameLabelPadding = Settings.Properties.FancyzonesLayoutNameLabelPadding.Value;
+            _layoutNameLabelDuration = Settings.Properties.FancyzonesLayoutNameLabelDuration.Value;
+
+            InitializeEnabledValue();
+
+            _windows11 = OSVersionHelper.IsWindows11();
+
+            // Disable setting on windows 10
+            if (!_windows11 && DisableRoundCornersOnWindowSnap)
+            {
+                DisableRoundCornersOnWindowSnap = false;
+            }
+        }
+
+        private void InitializeEnabledValue()
+        {
             _enabledGpoRuleConfiguration = GPOWrapper.GetConfiguredFancyZonesEnabledValue();
             if (_enabledGpoRuleConfiguration == GpoRuleConfigured.Disabled || _enabledGpoRuleConfiguration == GpoRuleConfigured.Enabled)
             {
@@ -127,14 +151,16 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             {
                 _isEnabled = GeneralSettingsConfig.Enabled.FancyZones;
             }
+        }
 
-            _windows11 = Helper.Windows11();
-
-            // Disable setting on windows 10
-            if (!_windows11 && DisableRoundCornersOnWindowSnap)
+        public override Dictionary<string, HotkeySettings[]> GetAllHotkeySettings()
+        {
+            var hotkeysDict = new Dictionary<string, HotkeySettings[]>
             {
-                DisableRoundCornersOnWindowSnap = false;
-            }
+                [ModuleName] = [EditorHotkey, NextTabHotkey, PrevTabHotkey, MonitorRotationHotkey],
+            };
+
+            return hotkeysDict;
         }
 
         private GpoRuleConfigured _enabledGpoRuleConfiguration;
@@ -142,11 +168,13 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
         private bool _isEnabled;
         private bool _shiftDrag;
         private bool _mouseSwitch;
+        private bool _mouseMiddleButtonSpanningMultipleZones;
+        private bool _mouseWheelLayoutSwitch;
         private bool _overrideSnapHotkeys;
         private bool _moveWindowsAcrossMonitors;
         private MoveWindowBehaviour _moveWindowBehaviour;
         private OverlappingZonesAlgorithm _overlappingZonesAlgorithm;
-        private bool _displayChangemoveWindows;
+        private bool _displayOrWorkAreaChangeMoveWindows;
         private bool _zoneSetChangeMoveWindows;
         private bool _appLastZoneMoveWindows;
         private bool _openWindowOnActiveMonitor;
@@ -164,11 +192,20 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
         private bool _disableRoundCornersOnSnap;
 
         private int _highlightOpacity;
+        private bool _layoutNameLabelEnabled;
+        private int _layoutNameLabelPlacement;
+        private string _layoutNameLabelTextColor;
+        private string _layoutNameLabelBackgroundColor;
+        private int _layoutNameLabelFontSize;
+        private int _layoutNameLabelPadding;
+        private int _layoutNameLabelDuration;
         private string _excludedApps;
         private HotkeySettings _editorHotkey;
         private bool _windowSwitching;
         private HotkeySettings _nextTabHotkey;
         private HotkeySettings _prevTabHotkey;
+        private bool _monitorRotation;
+        private HotkeySettings _monitorRotationHotkey;
         private string _zoneInActiveColor;
         private string _zoneBorderColor;
         private string _zoneHighlightColor;
@@ -202,6 +239,7 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
                     OnPropertyChanged(nameof(SnapHotkeysCategoryEnabled));
                     OnPropertyChanged(nameof(QuickSwitchEnabled));
                     OnPropertyChanged(nameof(WindowSwitchingCategoryEnabled));
+                    OnPropertyChanged(nameof(MonitorRotationCategoryEnabled));
                 }
             }
         }
@@ -232,6 +270,14 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             get
             {
                 return _isEnabled && _windowSwitching;
+            }
+        }
+
+        public bool MonitorRotationCategoryEnabled
+        {
+            get
+            {
+                return _isEnabled && _monitorRotation;
             }
         }
 
@@ -266,6 +312,42 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
                 {
                     _mouseSwitch = value;
                     Settings.Properties.FancyzonesMouseSwitch.Value = value;
+                    NotifyPropertyChanged();
+                }
+            }
+        }
+
+        public bool MouseMiddleClickSpanningMultipleZones
+        {
+            get
+            {
+                return _mouseMiddleButtonSpanningMultipleZones;
+            }
+
+            set
+            {
+                if (value != _mouseMiddleButtonSpanningMultipleZones)
+                {
+                    _mouseMiddleButtonSpanningMultipleZones = value;
+                    Settings.Properties.FancyzonesMouseMiddleClickSpanningMultipleZones.Value = value;
+                    NotifyPropertyChanged();
+                }
+            }
+        }
+
+        public bool MouseWheelLayoutSwitch
+        {
+            get
+            {
+                return _mouseWheelLayoutSwitch;
+            }
+
+            set
+            {
+                if (value != _mouseWheelLayoutSwitch)
+                {
+                    _mouseWheelLayoutSwitch = value;
+                    Settings.Properties.FancyzonesMouseWheelLayoutSwitch.Value = value;
                     NotifyPropertyChanged();
                 }
             }
@@ -369,19 +451,19 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             }
         }
 
-        public bool DisplayChangeMoveWindows
+        public bool DisplayOrWorkAreaChangeMoveWindows
         {
             get
             {
-                return _displayChangemoveWindows;
+                return _displayOrWorkAreaChangeMoveWindows;
             }
 
             set
             {
-                if (value != _displayChangemoveWindows)
+                if (value != _displayOrWorkAreaChangeMoveWindows)
                 {
-                    _displayChangemoveWindows = value;
-                    Settings.Properties.FancyzonesDisplayChangeMoveWindows.Value = value;
+                    _displayOrWorkAreaChangeMoveWindows = value;
+                    Settings.Properties.FancyzonesDisplayOrWorkAreaChangeMoveWindows.Value = value;
                     NotifyPropertyChanged();
                 }
             }
@@ -604,24 +686,6 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             }
         }
 
-        public bool AllowPopupWindowSnap
-        {
-            get
-            {
-                return _allowPopupWindowSnap;
-            }
-
-            set
-            {
-                if (value != _allowPopupWindowSnap)
-                {
-                    _allowPopupWindowSnap = value;
-                    Settings.Properties.FancyzonesAllowPopupWindowSnap.Value = value;
-                    NotifyPropertyChanged();
-                }
-            }
-        }
-
         public bool AllowChildWindowSnap
         {
             get
@@ -674,6 +738,134 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
                 {
                     _zoneHighlightColor = value;
                     Settings.Properties.FancyzonesZoneHighlightColor.Value = value;
+                    NotifyPropertyChanged();
+                }
+            }
+        }
+
+        public bool LayoutNameLabelEnabled
+        {
+            get
+            {
+                return _layoutNameLabelEnabled;
+            }
+
+            set
+            {
+                if (value != _layoutNameLabelEnabled)
+                {
+                    _layoutNameLabelEnabled = value;
+                    Settings.Properties.FancyzonesLayoutNameLabelEnabled.Value = value;
+                    NotifyPropertyChanged();
+                }
+            }
+        }
+
+        public int LayoutNameLabelPlacement
+        {
+            get
+            {
+                return _layoutNameLabelPlacement;
+            }
+
+            set
+            {
+                if (value != _layoutNameLabelPlacement)
+                {
+                    _layoutNameLabelPlacement = value;
+                    Settings.Properties.FancyzonesLayoutNameLabelPlacement.Value = value;
+                    NotifyPropertyChanged();
+                }
+            }
+        }
+
+        public string LayoutNameLabelTextColor
+        {
+            get
+            {
+                return _layoutNameLabelTextColor;
+            }
+
+            set
+            {
+                value = SettingsUtilities.ToRGBHex(value);
+                if (!value.Equals(_layoutNameLabelTextColor, StringComparison.OrdinalIgnoreCase))
+                {
+                    _layoutNameLabelTextColor = value;
+                    Settings.Properties.FancyzonesLayoutNameLabelTextColor.Value = value;
+                    NotifyPropertyChanged();
+                }
+            }
+        }
+
+        public string LayoutNameLabelBackgroundColor
+        {
+            get
+            {
+                return _layoutNameLabelBackgroundColor;
+            }
+
+            set
+            {
+                value = SettingsUtilities.ToRGBHex(value);
+                if (!value.Equals(_layoutNameLabelBackgroundColor, StringComparison.OrdinalIgnoreCase))
+                {
+                    _layoutNameLabelBackgroundColor = value;
+                    Settings.Properties.FancyzonesLayoutNameLabelBackgroundColor.Value = value;
+                    NotifyPropertyChanged();
+                }
+            }
+        }
+
+        public int LayoutNameLabelFontSize
+        {
+            get
+            {
+                return _layoutNameLabelFontSize;
+            }
+
+            set
+            {
+                if (value != _layoutNameLabelFontSize)
+                {
+                    _layoutNameLabelFontSize = value;
+                    Settings.Properties.FancyzonesLayoutNameLabelFontSize.Value = value;
+                    NotifyPropertyChanged();
+                }
+            }
+        }
+
+        public int LayoutNameLabelPadding
+        {
+            get
+            {
+                return _layoutNameLabelPadding;
+            }
+
+            set
+            {
+                if (value != _layoutNameLabelPadding)
+                {
+                    _layoutNameLabelPadding = value;
+                    Settings.Properties.FancyzonesLayoutNameLabelPadding.Value = value;
+                    NotifyPropertyChanged();
+                }
+            }
+        }
+
+        public int LayoutNameLabelDuration
+        {
+            get
+            {
+                return _layoutNameLabelDuration;
+            }
+
+            set
+            {
+                if (value != _layoutNameLabelDuration)
+                {
+                    _layoutNameLabelDuration = value;
+                    Settings.Properties.FancyzonesLayoutNameLabelDuration.Value = value;
                     NotifyPropertyChanged();
                 }
             }
@@ -765,7 +957,7 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             {
                 if (value != _editorHotkey)
                 {
-                    if (value == null || value.IsEmpty())
+                    if (value == null)
                     {
                         _editorHotkey = FZConfigProperties.DefaultEditorHotkeyValue;
                     }
@@ -811,7 +1003,7 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             {
                 if (value != _nextTabHotkey)
                 {
-                    if (value == null || value.IsEmpty())
+                    if (value == null)
                     {
                         _nextTabHotkey = FZConfigProperties.DefaultNextTabHotkeyValue;
                     }
@@ -837,7 +1029,7 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             {
                 if (value != _prevTabHotkey)
                 {
-                    if (value == null || value.IsEmpty())
+                    if (value == null)
                     {
                         _prevTabHotkey = FZConfigProperties.DefaultPrevTabHotkeyValue;
                     }
@@ -847,6 +1039,52 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
                     }
 
                     Settings.Properties.FancyzonesPrevTabHotkey.Value = _prevTabHotkey;
+                    NotifyPropertyChanged();
+                }
+            }
+        }
+
+        public bool MonitorRotation
+        {
+            get
+            {
+                return _monitorRotation;
+            }
+
+            set
+            {
+                if (value != _monitorRotation)
+                {
+                    _monitorRotation = value;
+
+                    Settings.Properties.FancyzonesMonitorRotation.Value = _monitorRotation;
+                    NotifyPropertyChanged();
+                    OnPropertyChanged(nameof(MonitorRotationCategoryEnabled));
+                }
+            }
+        }
+
+        public HotkeySettings MonitorRotationHotkey
+        {
+            get
+            {
+                return _monitorRotationHotkey;
+            }
+
+            set
+            {
+                if (value != _monitorRotationHotkey)
+                {
+                    if (value == null)
+                    {
+                        _monitorRotationHotkey = FZConfigProperties.DefaultMonitorRotationHotkeyValue;
+                    }
+                    else
+                    {
+                        _monitorRotationHotkey = value;
+                    }
+
+                    Settings.Properties.FancyzonesMonitorRotationHotkey.Value = _monitorRotationHotkey;
                     NotifyPropertyChanged();
                 }
             }
@@ -882,6 +1120,15 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
         {
             OnPropertyChanged(propertyName);
             SettingsUtils.SaveSettings(Settings.ToJsonString(), GetSettingsSubPath());
+        }
+
+        public void RefreshEnabledState()
+        {
+            InitializeEnabledValue();
+            OnPropertyChanged(nameof(IsEnabled));
+            OnPropertyChanged(nameof(SnapHotkeysCategoryEnabled));
+            OnPropertyChanged(nameof(QuickSwitchEnabled));
+            OnPropertyChanged(nameof(WindowSwitchingCategoryEnabled));
         }
     }
 }

@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <iostream>
 #include <vector>
+#include <mutex>
 
 typedef void (*THEME_HANDLE)();
 DWORD WINAPI _checkTheme(LPVOID lpParam);
@@ -14,6 +15,7 @@ public:
     ThemeListener()
     {
         AppTheme = ThemeHelpers::GetAppTheme();
+        SystemTheme = ThemeHelpers::GetSystemTheme();
         dwThreadHandle = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)_checkTheme, this, 0, &dwThreadId);
     }
     ~ThemeListener()
@@ -22,13 +24,21 @@ public:
         dwThreadId = 0;
     }
 
-    AppTheme AppTheme;
-    void ThemeListener::AddChangedHandler(THEME_HANDLE handle);
-    void ThemeListener::DelChangedHandler(THEME_HANDLE handle);
+    Theme AppTheme;
+    Theme SystemTheme;
+    void AddChangedHandler(THEME_HANDLE handle);
+    void DelChangedHandler(THEME_HANDLE handle);
+    void AddAppThemeChangedHandler(THEME_HANDLE handle);
+    void DelAppThemeChangedHandler(THEME_HANDLE handle);
+    void AddSystemThemeChangedHandler(THEME_HANDLE handle);
+    void DelSystemThemeChangedHandler(THEME_HANDLE handle);
     void CheckTheme();
 
 private:
     HANDLE dwThreadHandle;
     DWORD dwThreadId;
     std::vector<THEME_HANDLE> handles;
+    std::vector<THEME_HANDLE> appThemeHandles;
+    std::vector<THEME_HANDLE> systemThemeHandles;
+    mutable std::mutex handlesMutex;
 };

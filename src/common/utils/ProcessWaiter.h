@@ -1,5 +1,7 @@
 #include <functional>
+#include <memory>
 #include <string>
+#include <type_traits>
 #include <Windows.h>
 #include <thread>
 
@@ -7,25 +9,36 @@ namespace ProcessWaiter
 {
     void OnProcessTerminate(std::wstring parent_pid, std::function<void(DWORD)> callback)
     {
-        DWORD pid = std::stol(parent_pid);
-        std::thread([=]() {
-            HANDLE process = OpenProcess(SYNCHRONIZE, FALSE, pid);
-            if (process != nullptr)
+        DWORD pid = 0;
+        try
+        {
+            pid = std::stol(parent_pid);
+        }
+        catch (...)
+        {
+            if (callback)
             {
-                if (WaitForSingleObject(process, INFINITE) == WAIT_OBJECT_0)
+                callback(ERROR_INVALID_PARAMETER);
+            }
+            return;
+        }
+        // Detached on purpose: the INFINITE wait must never block the caller or process shutdown.
+        std::thread([=]() {
+            std::unique_ptr<std::remove_pointer_t<HANDLE>, decltype(&CloseHandle)> process{ OpenProcess(SYNCHRONIZE, FALSE, pid), &CloseHandle };
+            if (!process)
+            {
+                if (callback)
                 {
-                    CloseHandle(process);
-                    callback(ERROR_SUCCESS);
-                }
-                else
-                {
-                    CloseHandle(process);
                     callback(GetLastError());
                 }
+                return;
             }
-            else
+
+            const DWORD result = WaitForSingleObject(process.get(), INFINITE) == WAIT_OBJECT_0 ? ERROR_SUCCESS : GetLastError();
+            process.reset();
+            if (callback)
             {
-                callback(GetLastError());
+                callback(result);
             }
         }).detach();
     }

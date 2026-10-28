@@ -4,7 +4,7 @@
 
 namespace Microsoft.PowerToys.Settings.UI.Library.Enumerations
 {
-    // NOTE: don't change the order (numbers) of the enumeration entires
+    // NOTE: don't change the order (numbers) of the enumeration entries
 
     /// <summary>
     /// The type of the color representation
@@ -80,5 +80,20 @@ namespace Microsoft.PowerToys.Settings.UI.Library.Enumerations
         /// Color presentation as an 8-digit hexadecimal integer (0xFFFFFFFF)
         /// </summary>
         HexInteger = 13,
+
+        /// <summary>
+        /// Color representation as CIELCh color space (L[0..100], C[0..230], h[0°..360°])
+        /// </summary>
+        CIELCh = 14,
+
+        /// <summary>
+        /// Color representation as Oklab color space (L[0..1], a[-0.5..0.5], b[-0.5..0.5])
+        /// </summary>
+        Oklab = 15,
+
+        /// <summary>
+        /// Color representation as Oklch color space (L[0..1], C[0..0.5], h[0°..360°])
+        /// </summary>
+        Oklch = 16,
     }
 }

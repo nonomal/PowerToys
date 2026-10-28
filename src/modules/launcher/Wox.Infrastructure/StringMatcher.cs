@@ -29,6 +29,8 @@ namespace Wox.Infrastructure
 
         public static StringMatcher Instance { get; internal set; }
 
+        private static readonly char[] Separator = new[] { ' ' };
+
         [Obsolete("This method is obsolete and should not be used. Please use the static function StringMatcher.FuzzySearch")]
         public static int Score(string source, string target)
         {
@@ -90,10 +92,7 @@ namespace Wox.Infrastructure
                 return new MatchResult(false, UserSettingSearchPrecision);
             }
 
-            if (opt == null)
-            {
-                throw new ArgumentNullException(nameof(opt));
-            }
+            ArgumentNullException.ThrowIfNull(opt);
 
             query = query.Trim();
 
@@ -107,7 +106,7 @@ namespace Wox.Infrastructure
             var fullStringToCompareWithoutCase = opt.IgnoreCase ? stringToCompare.ToUpper(CultureInfo.InvariantCulture) : stringToCompare;
             var queryWithoutCase = opt.IgnoreCase ? query.ToUpper(CultureInfo.InvariantCulture) : query;
 
-            var querySubstrings = queryWithoutCase.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            var querySubstrings = queryWithoutCase.Split(Separator, StringSplitOptions.RemoveEmptyEntries);
             int currentQuerySubstringIndex = 0;
             var currentQuerySubstring = querySubstrings[currentQuerySubstringIndex];
             var currentQuerySubstringCharacterIndex = 0;
@@ -226,9 +225,7 @@ namespace Wox.Infrastructure
             }
             else
             {
-                int? ind = spaceIndices.OrderBy(item => (firstMatchIndex - item)).Where(item => firstMatchIndex > item).FirstOrDefault();
-                int closestSpaceIndex = ind ?? -1;
-                return closestSpaceIndex;
+                return spaceIndices.OrderBy(item => (firstMatchIndex - item)).Where(item => firstMatchIndex > item).FirstOrDefault(-1);
             }
         }
 
@@ -275,7 +272,7 @@ namespace Wox.Infrastructure
             // while the score is lower if they are more spread out
 
             // The length of the match is assigned a larger weight factor.
-            // I.e. the length is more important than where in the string a match is found.
+            // I.e. the length is more important than the location where a match is found.
             const int matchLenWeightFactor = 2;
 
             var score = 100 * (query.Length + 1) * matchLenWeightFactor / ((1 + firstIndex) + (matchLenWeightFactor * (matchLen + 1)));

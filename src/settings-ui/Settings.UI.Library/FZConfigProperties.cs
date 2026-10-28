@@ -5,6 +5,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
+using Settings.UI.Library.Attributes;
+
 namespace Microsoft.PowerToys.Settings.UI.Library
 {
     public class FZConfigProperties
@@ -13,20 +15,24 @@ namespace Microsoft.PowerToys.Settings.UI.Library
         public const int VkOem3 = 0xc0;
         public const int VkNext = 0x22;
         public const int VkPrior = 0x21;
+        public const int VkX = 0x58;
 
         public static readonly HotkeySettings DefaultEditorHotkeyValue = new HotkeySettings(true, false, false, true, VkOem3);
         public static readonly HotkeySettings DefaultNextTabHotkeyValue = new HotkeySettings(true, false, false, false, VkNext);
         public static readonly HotkeySettings DefaultPrevTabHotkeyValue = new HotkeySettings(true, false, false, false, VkPrior);
+        public static readonly HotkeySettings DefaultMonitorRotationHotkeyValue = new HotkeySettings(false, false, true, false, VkX);
 
         public FZConfigProperties()
         {
             FancyzonesShiftDrag = new BoolProperty(ConfigDefaults.DefaultFancyzonesShiftDrag);
             FancyzonesOverrideSnapHotkeys = new BoolProperty();
             FancyzonesMouseSwitch = new BoolProperty();
+            FancyzonesMouseMiddleClickSpanningMultipleZones = new BoolProperty();
+            FancyzonesMouseWheelLayoutSwitch = new BoolProperty();
             FancyzonesMoveWindowsAcrossMonitors = new BoolProperty();
             FancyzonesMoveWindowsBasedOnPosition = new BoolProperty();
             FancyzonesOverlappingZonesAlgorithm = new IntProperty();
-            FancyzonesDisplayChangeMoveWindows = new BoolProperty();
+            FancyzonesDisplayOrWorkAreaChangeMoveWindows = new BoolProperty(ConfigDefaults.DefaultFancyzonesDisplayOrWorkAreaChangeMoveWindows);
             FancyzonesZoneSetChangeMoveWindows = new BoolProperty();
             FancyzonesAppLastZoneMoveWindows = new BoolProperty();
             FancyzonesOpenWindowOnActiveMonitor = new BoolProperty();
@@ -38,10 +44,19 @@ namespace Microsoft.PowerToys.Settings.UI.Library
             FancyzonesSpanZonesAcrossMonitors = new BoolProperty();
             FancyzonesZoneHighlightColor = new StringProperty(ConfigDefaults.DefaultFancyZonesZoneHighlightColor);
             FancyzonesHighlightOpacity = new IntProperty(50);
+            FancyzonesLayoutNameLabelEnabled = new BoolProperty(true);
+            FancyzonesLayoutNameLabelPlacement = new IntProperty(1); // TopCenter
+            FancyzonesLayoutNameLabelTextColor = new StringProperty("#FFFFFF");
+            FancyzonesLayoutNameLabelBackgroundColor = new StringProperty("#262626");
+            FancyzonesLayoutNameLabelFontSize = new IntProperty(36);
+            FancyzonesLayoutNameLabelPadding = new IntProperty(12);
+            FancyzonesLayoutNameLabelDuration = new IntProperty(1500);
             FancyzonesEditorHotkey = new KeyboardKeysProperty(DefaultEditorHotkeyValue);
             FancyzonesWindowSwitching = new BoolProperty(true);
             FancyzonesNextTabHotkey = new KeyboardKeysProperty(DefaultNextTabHotkeyValue);
             FancyzonesPrevTabHotkey = new KeyboardKeysProperty(DefaultPrevTabHotkeyValue);
+            FancyzonesMonitorRotation = new BoolProperty();
+            FancyzonesMonitorRotationHotkey = new KeyboardKeysProperty(DefaultMonitorRotationHotkeyValue);
             FancyzonesMakeDraggedWindowTransparent = new BoolProperty();
             FancyzonesAllowPopupWindowSnap = new BoolProperty();
             FancyzonesAllowChildWindowSnap = new BoolProperty();
@@ -60,6 +75,12 @@ namespace Microsoft.PowerToys.Settings.UI.Library
         [JsonPropertyName("fancyzones_mouseSwitch")]
         public BoolProperty FancyzonesMouseSwitch { get; set; }
 
+        [JsonPropertyName("fancyzones_mouseMiddleClickSpanningMultipleZones")]
+        public BoolProperty FancyzonesMouseMiddleClickSpanningMultipleZones { get; set; }
+
+        [JsonPropertyName("fancyzones_mouseWheelLayoutSwitch")]
+        public BoolProperty FancyzonesMouseWheelLayoutSwitch { get; set; }
+
         [JsonPropertyName("fancyzones_overrideSnapHotkeys")]
         public BoolProperty FancyzonesOverrideSnapHotkeys { get; set; }
 
@@ -72,8 +93,8 @@ namespace Microsoft.PowerToys.Settings.UI.Library
         [JsonPropertyName("fancyzones_overlappingZonesAlgorithm")]
         public IntProperty FancyzonesOverlappingZonesAlgorithm { get; set; }
 
-        [JsonPropertyName("fancyzones_displayChange_moveWindows")]
-        public BoolProperty FancyzonesDisplayChangeMoveWindows { get; set; }
+        [JsonPropertyName("fancyzones_displayOrWorkAreaChange_moveWindows")]
+        public BoolProperty FancyzonesDisplayOrWorkAreaChangeMoveWindows { get; set; }
 
         [JsonPropertyName("fancyzones_zoneSetChange_moveWindows")]
         public BoolProperty FancyzonesZoneSetChangeMoveWindows { get; set; }
@@ -106,6 +127,7 @@ namespace Microsoft.PowerToys.Settings.UI.Library
         public BoolProperty FancyzonesMakeDraggedWindowTransparent { get; set; }
 
         [JsonPropertyName("fancyzones_allowPopupWindowSnap")]
+        [CmdConfigureIgnore]
         public BoolProperty FancyzonesAllowPopupWindowSnap { get; set; }
 
         [JsonPropertyName("fancyzones_allowChildWindowSnap")]
@@ -120,6 +142,27 @@ namespace Microsoft.PowerToys.Settings.UI.Library
         [JsonPropertyName("fancyzones_highlight_opacity")]
         public IntProperty FancyzonesHighlightOpacity { get; set; }
 
+        [JsonPropertyName("fancyzones_layoutNameLabelEnabled")]
+        public BoolProperty FancyzonesLayoutNameLabelEnabled { get; set; }
+
+        [JsonPropertyName("fancyzones_layoutNameLabelPlacement")]
+        public IntProperty FancyzonesLayoutNameLabelPlacement { get; set; }
+
+        [JsonPropertyName("fancyzones_layoutNameLabelTextColor")]
+        public StringProperty FancyzonesLayoutNameLabelTextColor { get; set; }
+
+        [JsonPropertyName("fancyzones_layoutNameLabelBackgroundColor")]
+        public StringProperty FancyzonesLayoutNameLabelBackgroundColor { get; set; }
+
+        [JsonPropertyName("fancyzones_layoutNameLabelFontSize")]
+        public IntProperty FancyzonesLayoutNameLabelFontSize { get; set; }
+
+        [JsonPropertyName("fancyzones_layoutNameLabelPadding")]
+        public IntProperty FancyzonesLayoutNameLabelPadding { get; set; }
+
+        [JsonPropertyName("fancyzones_layoutNameLabelDuration")]
+        public IntProperty FancyzonesLayoutNameLabelDuration { get; set; }
+
         [JsonPropertyName("fancyzones_editor_hotkey")]
         public KeyboardKeysProperty FancyzonesEditorHotkey { get; set; }
 
@@ -131,6 +174,12 @@ namespace Microsoft.PowerToys.Settings.UI.Library
 
         [JsonPropertyName("fancyzones_prevTab_hotkey")]
         public KeyboardKeysProperty FancyzonesPrevTabHotkey { get; set; }
+
+        [JsonPropertyName("fancyzones_monitorRotation")]
+        public BoolProperty FancyzonesMonitorRotation { get; set; }
+
+        [JsonPropertyName("fancyzones_monitorRotation_hotkey")]
+        public KeyboardKeysProperty FancyzonesMonitorRotationHotkey { get; set; }
 
         [JsonPropertyName("fancyzones_excluded_apps")]
         public StringProperty FancyzonesExcludedApps { get; set; }

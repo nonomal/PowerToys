@@ -18,14 +18,16 @@ namespace ZonedWindowProperties
 
 namespace FancyZonesWindowProperties
 {
-    void StampZoneIndexProperty(HWND window, const ZoneIndexSet& zoneSet);
+    bool StampZoneIndexProperty(HWND window, const ZoneIndexSet& zoneSet);
     void RemoveZoneIndexProperty(HWND window);
     ZoneIndexSet RetrieveZoneIndexProperty(HWND window);
 
     void StampMovedOnOpeningProperty(HWND window);
-    bool RetreiveMovedOnOpeningProperty(HWND window);
+    bool RetrieveMovedOnOpeningProperty(HWND window);
 
     std::optional<size_t> GetTabSortKeyWithinZone(HWND window);
     void SetTabSortKeyWithinZone(HWND window, std::optional<size_t> tabSortKeyWithinZone);
+
+    bool IsLaunchedByWorkspaces(HWND window);
 }
 

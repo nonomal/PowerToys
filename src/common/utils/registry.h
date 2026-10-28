@@ -27,9 +27,6 @@ namespace registry
             ~on_exit() { f(); }
         };
 
-        template<class>
-        inline constexpr bool always_false_v = false;
-
         template<class... Ts>
         struct overloaded : Ts...
         {
@@ -59,6 +56,150 @@ namespace registry
             }
         }
     }
+
+    namespace install_scope
+    {
+        const wchar_t INSTALL_SCOPE_REG_KEY[] = L"Software\\Classes\\powertoys\\";
+        const wchar_t UNINSTALL_REG_KEY[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
+        
+        // Bundle UpgradeCode from PowerToys.wxs (with braces as stored in registry)
+        const wchar_t BUNDLE_UPGRADE_CODE[] = L"{6341382D-C0A9-4238-9188-BE9607E3FAB2}";
+
+        enum class InstallScope
+        {
+            PerMachine = 0,
+            PerUser,
+        };
+
+        // Helper function to find PowerToys bundle in Windows Uninstall registry by BundleUpgradeCode
+        inline bool find_powertoys_bundle_in_uninstall_registry(HKEY rootKey)
+        {
+            HKEY uninstallKey{};
+            if (RegOpenKeyExW(rootKey, UNINSTALL_REG_KEY, 0, KEY_READ, &uninstallKey) != ERROR_SUCCESS)
+            {
+                return false;
+            }
+            detail::on_exit closeUninstallKey{ [uninstallKey] { RegCloseKey(uninstallKey); } };
+
+            DWORD index = 0;
+            wchar_t subKeyName[256];
+
+            // Enumerate all subkeys under Uninstall
+            while (RegEnumKeyW(uninstallKey, index++, subKeyName, 256) == ERROR_SUCCESS)
+            {
+                HKEY productKey{};
+                if (RegOpenKeyExW(uninstallKey, subKeyName, 0, KEY_READ, &productKey) != ERROR_SUCCESS)
+                {
+                    continue;
+                }
+                detail::on_exit closeProductKey{ [productKey] { RegCloseKey(productKey); } };
+
+                // Check BundleUpgradeCode value (specific to WiX Bundle installations)
+                wchar_t bundleUpgradeCode[256]{};
+                DWORD bundleUpgradeCodeSize = sizeof(bundleUpgradeCode);
+
+                if (RegQueryValueExW(productKey, L"BundleUpgradeCode", nullptr, nullptr,
+                                    reinterpret_cast<LPBYTE>(bundleUpgradeCode), &bundleUpgradeCodeSize) == ERROR_SUCCESS)
+                {
+                    if (_wcsicmp(bundleUpgradeCode, BUNDLE_UPGRADE_CODE) == 0)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        inline const InstallScope get_current_install_scope()
+        {
+            // 1. Check HKCU Uninstall registry first (user-level bundle)
+            // Note: MSI components are always in HKLM regardless of install scope,
+            // but the Bundle entry will be in HKCU for per-user installations
+            if (find_powertoys_bundle_in_uninstall_registry(HKEY_CURRENT_USER))
+            {
+                Logger::info(L"Found user-level PowerToys bundle via BundleUpgradeCode in HKCU");
+                return InstallScope::PerUser;
+            }
+
+            // 2. Check HKLM Uninstall registry (machine-level bundle)
+            if (find_powertoys_bundle_in_uninstall_registry(HKEY_LOCAL_MACHINE))
+            {
+                Logger::info(L"Found machine-level PowerToys bundle via BundleUpgradeCode in HKLM");
+                return InstallScope::PerMachine;
+            }
+
+            // 3. Fallback to legacy custom registry key detection
+            Logger::info(L"PowerToys bundle not found in Uninstall registry, falling back to legacy detection");
+
+            // Open HKLM key
+            HKEY perMachineKey{};
+            if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+                              INSTALL_SCOPE_REG_KEY,
+                              0,
+                              KEY_READ,
+                              &perMachineKey) != ERROR_SUCCESS)
+            {
+                // Open HKCU key
+                HKEY perUserKey{};
+                if (RegOpenKeyExW(HKEY_CURRENT_USER,
+                                  INSTALL_SCOPE_REG_KEY,
+                                  0,
+                                  KEY_READ,
+                                  &perUserKey) != ERROR_SUCCESS)
+                {
+                    // both keys are missing
+                    Logger::warn(L"No PowerToys installation detected, defaulting to PerMachine");
+                    return InstallScope::PerMachine;
+                }
+                else
+                {
+                    DWORD dataSize{};
+                    if (RegGetValueW(
+                        perUserKey,
+                        nullptr,
+                        L"InstallScope",
+                        RRF_RT_REG_SZ,
+                        nullptr,
+                        nullptr,
+                        &dataSize) != ERROR_SUCCESS)
+                    {
+                        // HKCU key is missing
+                        RegCloseKey(perUserKey);
+                        return InstallScope::PerMachine;
+                    }
+
+                    std::wstring data;
+                    data.resize(dataSize / sizeof(wchar_t));
+
+                    if (RegGetValueW(
+                            perUserKey,
+                            nullptr,
+                            L"InstallScope",
+                            RRF_RT_REG_SZ,
+                            nullptr,
+                            &data[0],
+                            &dataSize) != ERROR_SUCCESS)
+                    {
+                        // HKCU key is missing
+                        RegCloseKey(perUserKey);
+                        return InstallScope::PerMachine;
+                    }
+                    RegCloseKey(perUserKey);
+
+                    if (data.contains(L"perUser"))
+                    {
+                        return InstallScope::PerUser;
+                    }
+                }
+            }
+
+            return InstallScope::PerMachine;
+        }
+    }
+
+    template<class>
+    inline constexpr bool always_false_v = false;
 
     struct ValueChange
     {
@@ -241,7 +382,7 @@ namespace registry
             switch (type)
             {
             case REG_DWORD:
-                return *(DWORD*)buffer;
+                return *reinterpret_cast<const DWORD*>(buffer);
             case REG_SZ:
             {
                 if (!valueSize)
@@ -315,11 +456,11 @@ namespace registry
                                                           std::wstring handlerClsid,
                                                           std::wstring powertoysVersion,
                                                           std::wstring fullPathToHandler,
-                                                          std::wstring handlerCategory,
                                                           std::wstring className,
                                                           std::wstring displayName,
                                                           std::vector<std::wstring> fileTypes,
-                                                          std::wstring fileKindType = L"" )
+                                                          std::wstring perceivedType = L"",
+                                                          std::wstring fileKindType = L"")
         {
             const HKEY scope = perUser ? HKEY_CURRENT_USER : HKEY_LOCAL_MACHINE;
 
@@ -330,9 +471,6 @@ namespace registry
             std::wstring inprocServerPath = clsidPath;
             inprocServerPath += L'\\';
             inprocServerPath += L"InprocServer32";
-
-            std::wstring implementedCategoriesPath = clsidPath + LR"d(\Implemented Categories\)d";
-            implementedCategoriesPath += handlerCategory;
 
             std::wstring assemblyKeyValue;
             if (const auto lastDotPos = className.rfind(L'.'); lastDotPos != std::wstring::npos)
@@ -356,19 +494,15 @@ namespace registry
             // TODO: verify that we actually need all of those
             vec_t changes = { { scope, clsidPath, L"DisplayName", displayName },
                               { scope, clsidPath, std::nullopt, className },
-                              { scope, implementedCategoriesPath, std::nullopt, L"" },
                               { scope, inprocServerPath, std::nullopt, fullPathToHandler },
                               { scope, inprocServerPath, L"Assembly", assemblyKeyValue },
                               { scope, inprocServerPath, L"Class", className },
-                              { scope, inprocServerPath, L"ThreadingModel", L"Both" },
-                              { scope, versionPath, L"Assembly", assemblyKeyValue },
-                              { scope, versionPath, L"Class", className } };
+                              { scope, inprocServerPath, L"ThreadingModel", L"Apartment" } };
 
             for (const auto& fileType : fileTypes)
             {
-                std::wstring fileAssociationPath = L"Software\\Classes\\";
-                fileAssociationPath += fileType;
-                fileAssociationPath += L"\\shellex\\";
+                std::wstring fileTypePath = L"Software\\Classes\\" + fileType;
+                std::wstring fileAssociationPath = fileTypePath + L"\\shellex\\";
                 fileAssociationPath += handlerType == PreviewHandlerType::preview ? IPREVIEW_HANDLER_CLSID : ITHUMBNAIL_PROVIDER_CLSID;
                 changes.push_back({ scope, fileAssociationPath, std::nullopt, handlerClsid });
                 if (!fileKindType.empty())
@@ -377,6 +511,10 @@ namespace registry
                     // Make it optional as well so that we don't fail registering the handler if we can't write to HKEY_LOCAL_MACHINE.
                     std::wstring kindMapPath = L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\KindMap";
                     changes.push_back({ HKEY_LOCAL_MACHINE, kindMapPath, fileType, fileKindType, false});
+                }
+                if (!perceivedType.empty())
+                {
+                    changes.push_back({ scope, fileTypePath, L"PerceivedType", perceivedType });
                 }
                 if (handlerType == PreviewHandlerType::preview && fileType == L".reg")
                 {

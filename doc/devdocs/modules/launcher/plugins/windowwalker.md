@@ -8,7 +8,7 @@ The user can switch to the found windows, close them or kill their process.
 ## Remarks
 
 ### UWP Apps
-- The process of an UWP app can't be detected correctly for windows that are minimized while searching. At this time they are assigned to the generic process `ApplicationFrameHost.exe`. If the user searches for such an window while it is not minimized, then the process gets assigned correctly/updated. 
+- The process of an UWP app can't be detected correctly for windows that are minimized while searching. At this time they are assigned to the generic process `ApplicationFrameHost.exe`. If the user searches for such a window while it is not minimized, then the process gets assigned correctly/updated. 
 
 ### Killing processes
 - Killing the Explorer process is only allowed, if each folder window is running in its own process. (See section `File Explorer setting` below.)
@@ -17,7 +17,7 @@ The user can switch to the found windows, close them or kill their process.
 - Windows of UWP apps don't know their process, until they are searched in non-minimized state.
 
 ### File Explorer setting
-- To kill the Process of an Explorer window, each window has to run in a separate process. Otherwise the process is the same one as the shell process and killing the shell process will crash the shell (Windows ui).
+- To kill the Process of an Explorer window, each window has to run in a separate process. Otherwise, the process is the same one as the shell process and killing the shell process will crash the shell (Windows ui).
 - To enable this behavior the setting `Launch folder windows in a separate process` under `Folder Options > View` has to be enabled. 
 - From PowerToys Run you can open the `Folder options` dialog by clicking the information message in the search results. The information message is only shown when searching with action keyword for explorer windows and can be hidden in the plugin settings.
 - Note: The folder option/process is evaluated in real time. After changing the setting it is enough to search again for the windows.
@@ -36,7 +36,7 @@ The user can switch to the found windows, close them or kill their process.
 	| `SubtitleShowPid` | `false` | Show process id in subtitle |
 	| `SubtitleShowDesktopName` | `true` | Show desktop name in subtitle (If two or more desktops exist) |
 	| `ConfirmKillProcess` | `true` | Request confirmation when killing a process |
-	| `KillProcessTree` | `false` | Kill process and it's child processes |
+	| `KillProcessTree` | `false` | Kill process and its child processes |
 	| `OpenAfterKillAndClose` | `false` | Stay open after closing windows and killing processes (Not working with kill process confirmation) |
 	| `HideKillProcessOnElevatedProcesses` | `false` | Hide "kill process" button if additional permissions required |
 	| `HideExplorerSettingInfo` | `false` | Hide Explorer process information |
@@ -52,7 +52,7 @@ The user can switch to the found windows, close them or kill their process.
 - It is responsible for updating the search text and performing a fuzzy search on all the open windows.
 
 ### [`Window.cs`](/src/modules/launcher/Plugins/Microsoft.Plugin.WindowWalker/Components/Window.cs)
-- The [`Window`](/src/modules/launcher/Plugins/Microsoft.Plugin.WindowWalker/Components/Window.cs) class represents a specific window and has functions to get the name of the window, the state of the window (whether it is visible or not), the `SwitchTowindow` function which switches the desktop focus to the selected window and the `CloseThisWindow` function which closes the window. The `SwitchTowindow` action is performed when the user clicks on a window walker plugin result.
+- The [`Window`](/src/modules/launcher/Plugins/Microsoft.Plugin.WindowWalker/Components/Window.cs) class represents a specific window and has functions to get the name of the window, the state of the window (whether it is visible or not), the `SwitchToWindow` function which switches the desktop focus to the selected window and the `CloseThisWindow` function which closes the window. The `switchToWindow` action is performed when the user clicks on a window walker plugin result.
 - The `Window` class holds a static cache with the process information of all windows we know so far and each window instance has a property which holds its process information (name, file, ...). The process data in the cache and the window property are of the type `WindowProcess`.
 - To get the desktop information for a window, we use the common [`VirtualDesktopHelper`](/src/modules/launcher/Wox.Plugin/Common/VirtualDesktop/VirtualDesktopHelper.cs) in `Wox.Plugin` project. The instance of `VirtualDesktopHelper` is cached in the [`Main`](/src/modules/launcher/Plugins/Microsoft.Plugin.WindowWalker/Main.cs) class of the plugin at runtime. The desktop information is stored in a property of the type [`VDesktop`](/src/modules/launcher/Wox.Plugin/Common/VirtualDesktop/VDesktop.cs).
 

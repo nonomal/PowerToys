@@ -11,14 +11,18 @@ namespace ColorPicker.Mouse
     {
         event EventHandler<Color> MouseColorChanged;
 
-        event EventHandler<System.Windows.Point> MousePositionChanged;
+        event EventHandler<Windows.Foundation.Point> MousePositionChanged;
 
         // position and bool indicating zoom in or zoom out
-        event EventHandler<Tuple<System.Windows.Point, bool>> OnMouseWheel;
+        event EventHandler<Tuple<Windows.Foundation.Point, bool>> OnMouseWheel;
 
-        event MouseUpEventHandler OnMouseDown;
+        event PrimaryMouseDownEventHandler OnPrimaryMouseDown;
 
-        System.Windows.Point CurrentPosition { get; }
+        event SecondaryMouseUpEventHandler OnSecondaryMouseUp;
+
+        event MiddleMouseDownEventHandler OnMiddleMouseDown;
+
+        Windows.Foundation.Point CurrentPosition { get; }
 
         Color CurrentColor { get; }
     }

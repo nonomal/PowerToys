@@ -32,16 +32,16 @@ namespace FancyZonesUnitTests
             json::JsonArray zonesArray{};
             {
                 json::JsonObject zone{};
-                zone.SetNamedValue(NonLocalizable::CustomLayoutsIds::XID, json::value(0));
-                zone.SetNamedValue(NonLocalizable::CustomLayoutsIds::YID, json::value(0));
+                zone.SetNamedValue(NonLocalizable::CustomLayoutsIds::XAxisID, json::value(0));
+                zone.SetNamedValue(NonLocalizable::CustomLayoutsIds::YAxisID, json::value(0));
                 zone.SetNamedValue(NonLocalizable::CustomLayoutsIds::WidthID, json::value(1140));
                 zone.SetNamedValue(NonLocalizable::CustomLayoutsIds::HeightID, json::value(1040));
                 zonesArray.Append(zone);
             }
             {
                 json::JsonObject zone{};
-                zone.SetNamedValue(NonLocalizable::CustomLayoutsIds::XID, json::value(1140));
-                zone.SetNamedValue(NonLocalizable::CustomLayoutsIds::YID, json::value(649));
+                zone.SetNamedValue(NonLocalizable::CustomLayoutsIds::XAxisID, json::value(1140));
+                zone.SetNamedValue(NonLocalizable::CustomLayoutsIds::YAxisID, json::value(649));
                 zone.SetNamedValue(NonLocalizable::CustomLayoutsIds::WidthID, json::value(780));
                 zone.SetNamedValue(NonLocalizable::CustomLayoutsIds::HeightID, json::value(391));
                 zonesArray.Append(zone);
@@ -130,6 +130,26 @@ namespace FancyZonesUnitTests
             Assert::AreEqual((size_t)2, CustomLayouts::instance().GetAllLayouts().size());
             Assert::IsTrue(CustomLayouts::instance().GetLayout(FancyZonesUtils::GuidFromString(L"{ACE817FD-2C51-4E13-903A-84CAB86FD17C}").value()).has_value());
             Assert::IsTrue(CustomLayouts::instance().GetLayout(FancyZonesUtils::GuidFromString(L"{ACE817FD-2C51-4E13-903A-84CAB86FD17D}").value()).has_value());
+        }
+
+        TEST_METHOD (CustomLayoutsIdsInFileOrder)
+        {
+            // prepare: the grid layout appears before the canvas one in the file
+            json::JsonObject root{};
+            json::JsonArray layoutsArray{};
+
+            layoutsArray.Append(GridLayoutJson());
+            layoutsArray.Append(CanvasLayoutJson());
+
+            root.SetNamedValue(NonLocalizable::CustomLayoutsIds::CustomLayoutsArrayID, layoutsArray);
+            json::to_file(CustomLayouts::CustomLayoutsFileName(), root);
+
+            // test
+            CustomLayouts::instance().LoadData();
+            const auto& ids = CustomLayouts::instance().GetLayoutIdsInOrder();
+            Assert::AreEqual((size_t)2, ids.size());
+            Assert::AreEqual(L"{ACE817FD-2C51-4E13-903A-84CAB86FD17D}", FancyZonesUtils::GuidToString(ids[0]).value().c_str());
+            Assert::AreEqual(L"{ACE817FD-2C51-4E13-903A-84CAB86FD17C}", FancyZonesUtils::GuidToString(ids[1]).value().c_str());
         }
 
         TEST_METHOD (CustomLayoutsParseEmpty)

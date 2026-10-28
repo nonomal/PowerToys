@@ -2,9 +2,11 @@
 // The Microsoft Corporation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using System;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+
 using Microsoft.PowerToys.Settings.Telemetry;
 using Microsoft.PowerToys.Telemetry;
 
@@ -12,6 +14,10 @@ namespace Microsoft.PowerToys.Settings.UI.Library
 {
     public class EnabledModules
     {
+        private Action notifyEnabledChangedAction;
+
+        // Default values for enabled modules should match their expected "enabled by default" values.
+        // Otherwise, a run of DSC on clean settings will not match the expected default result.
         public EnabledModules()
         {
         }
@@ -28,6 +34,7 @@ namespace Microsoft.PowerToys.Settings.UI.Library
                 {
                     LogTelemetryEvent(value);
                     fancyZones = value;
+                    NotifyChange();
                 }
             }
         }
@@ -51,7 +58,7 @@ namespace Microsoft.PowerToys.Settings.UI.Library
         private bool fileExplorerPreview = true;
 
         [JsonPropertyName("File Explorer Preview")]
-        public bool FileExplorerPreview
+        public bool PowerPreview
         {
             get => fileExplorerPreview;
             set
@@ -64,7 +71,7 @@ namespace Microsoft.PowerToys.Settings.UI.Library
             }
         }
 
-        private bool shortcutGuide = true;
+        private bool shortcutGuide; // defaulting to off
 
         [JsonPropertyName("Shortcut Guide")]
         public bool ShortcutGuide
@@ -76,22 +83,7 @@ namespace Microsoft.PowerToys.Settings.UI.Library
                 {
                     LogTelemetryEvent(value);
                     shortcutGuide = value;
-                }
-            }
-        }
-
-        private bool videoConference; // defaulting to off https://github.com/microsoft/PowerToys/issues/14507
-
-        [JsonPropertyName("Video Conference")]
-        public bool VideoConference
-        {
-            get => this.videoConference;
-            set
-            {
-                if (this.videoConference != value)
-                {
-                    LogTelemetryEvent(value);
-                    this.videoConference = value;
+                    NotifyChange();
                 }
             }
         }
@@ -111,7 +103,7 @@ namespace Microsoft.PowerToys.Settings.UI.Library
             }
         }
 
-        private bool keyboardManager = true;
+        private bool keyboardManager; // defaulting to off
 
         [JsonPropertyName("Keyboard Manager")]
         public bool KeyboardManager
@@ -127,7 +119,7 @@ namespace Microsoft.PowerToys.Settings.UI.Library
             }
         }
 
-        private bool powerLauncher = true;
+        private bool powerLauncher; // defaulting to off
 
         [JsonPropertyName("PowerToys Run")]
         public bool PowerLauncher
@@ -139,6 +131,7 @@ namespace Microsoft.PowerToys.Settings.UI.Library
                 {
                     LogTelemetryEvent(value);
                     powerLauncher = value;
+                    NotifyChange();
                 }
             }
         }
@@ -155,11 +148,29 @@ namespace Microsoft.PowerToys.Settings.UI.Library
                 {
                     LogTelemetryEvent(value);
                     colorPicker = value;
+                    NotifyChange();
                 }
             }
         }
 
-        private bool awake;
+        private bool cropAndLock; // defaulting to off
+
+        [JsonPropertyName("CropAndLock")]
+        public bool CropAndLock
+        {
+            get => cropAndLock;
+            set
+            {
+                if (cropAndLock != value)
+                {
+                    LogTelemetryEvent(value);
+                    cropAndLock = value;
+                    NotifyChange();
+                }
+            }
+        }
+
+        private bool awake = true;
 
         [JsonPropertyName("Awake")]
         public bool Awake
@@ -171,6 +182,22 @@ namespace Microsoft.PowerToys.Settings.UI.Library
                 {
                     LogTelemetryEvent(value);
                     awake = value;
+                }
+            }
+        }
+
+        private bool mouseWithoutBorders; // defaulting to off
+
+        [JsonPropertyName("MouseWithoutBorders")]
+        public bool MouseWithoutBorders
+        {
+            get => mouseWithoutBorders;
+            set
+            {
+                if (mouseWithoutBorders != value)
+                {
+                    LogTelemetryEvent(value);
+                    mouseWithoutBorders = value;
                 }
             }
         }
@@ -191,6 +218,22 @@ namespace Microsoft.PowerToys.Settings.UI.Library
             }
         }
 
+        private bool altWindowCycle; // defaulting to off
+
+        [JsonPropertyName("AltWindowCycle")]
+        public bool AltWindowCycle
+        {
+            get => altWindowCycle;
+            set
+            {
+                if (altWindowCycle != value)
+                {
+                    LogTelemetryEvent(value);
+                    altWindowCycle = value;
+                }
+            }
+        }
+
         private bool mouseHighlighter = true;
 
         [JsonPropertyName("MouseHighlighter")]
@@ -203,6 +246,22 @@ namespace Microsoft.PowerToys.Settings.UI.Library
                 {
                     LogTelemetryEvent(value);
                     mouseHighlighter = value;
+                }
+            }
+        }
+
+        private bool mouseJump; // defaulting to off
+
+        [JsonPropertyName("MouseJump")]
+        public bool MouseJump
+        {
+            get => mouseJump;
+            set
+            {
+                if (mouseJump != value)
+                {
+                    LogTelemetryEvent(value);
+                    mouseJump = value;
                 }
             }
         }
@@ -223,7 +282,7 @@ namespace Microsoft.PowerToys.Settings.UI.Library
             }
         }
 
-        private bool mousePointerCrosshairs = true;
+        private bool mousePointerCrosshairs; // defaulting to off
 
         [JsonPropertyName("MousePointerCrosshairs")]
         public bool MousePointerCrosshairs
@@ -239,7 +298,7 @@ namespace Microsoft.PowerToys.Settings.UI.Library
             }
         }
 
-        private bool powerAccent;
+        private bool powerAccent; // defaulting to off
 
         [JsonPropertyName("QuickAccent")]
         public bool PowerAccent
@@ -255,10 +314,10 @@ namespace Microsoft.PowerToys.Settings.UI.Library
             }
         }
 
-        private bool powerOCR = true;
+        private bool powerOCR; // defaulting to off
 
         [JsonPropertyName("TextExtractor")]
-        public bool PowerOCR
+        public bool PowerOcr
         {
             get => powerOCR;
             set
@@ -267,6 +326,24 @@ namespace Microsoft.PowerToys.Settings.UI.Library
                 {
                     LogTelemetryEvent(value);
                     powerOCR = value;
+                    NotifyChange();
+                }
+            }
+        }
+
+        private bool advancedPaste; // defaulting to off
+
+        [JsonPropertyName("AdvancedPaste")]
+        public bool AdvancedPaste
+        {
+            get => advancedPaste;
+            set
+            {
+                if (advancedPaste != value)
+                {
+                    LogTelemetryEvent(value);
+                    advancedPaste = value;
+                    NotifyChange();
                 }
             }
         }
@@ -283,11 +360,12 @@ namespace Microsoft.PowerToys.Settings.UI.Library
                 {
                     LogTelemetryEvent(value);
                     measureTool = value;
+                    NotifyChange();
                 }
             }
         }
 
-        private bool hosts = true;
+        private bool hosts; // defaulting to off
 
         [JsonPropertyName("Hosts")]
         public bool Hosts
@@ -299,6 +377,7 @@ namespace Microsoft.PowerToys.Settings.UI.Library
                 {
                     LogTelemetryEvent(value);
                     hosts = value;
+                    NotifyChange();
                 }
             }
         }
@@ -319,6 +398,242 @@ namespace Microsoft.PowerToys.Settings.UI.Library
             }
         }
 
+        private bool peek = true;
+
+        [JsonPropertyName("Peek")]
+        public bool Peek
+        {
+            get => peek;
+            set
+            {
+                if (peek != value)
+                {
+                    LogTelemetryEvent(value);
+                    peek = value;
+                }
+            }
+        }
+
+        private bool registryPreview; // defaulting to off
+
+        [JsonPropertyName("RegistryPreview")]
+        public bool RegistryPreview
+        {
+            get => registryPreview;
+            set
+            {
+                if (registryPreview != value)
+                {
+                    LogTelemetryEvent(value);
+                    registryPreview = value;
+                }
+            }
+        }
+
+        private bool cmdNotFound = true;
+
+        [JsonPropertyName("CmdNotFound")]
+        public bool CmdNotFound
+        {
+            get => cmdNotFound;
+            set
+            {
+                if (cmdNotFound != value)
+                {
+                    LogTelemetryEvent(value);
+                    cmdNotFound = value;
+                    NotifyChange();
+                }
+            }
+        }
+
+        private bool environmentVariables; // defaulting to off
+
+        [JsonPropertyName("EnvironmentVariables")]
+        public bool EnvironmentVariables
+        {
+            get => environmentVariables;
+            set
+            {
+                if (environmentVariables != value)
+                {
+                    LogTelemetryEvent(value);
+                    environmentVariables = value;
+                }
+            }
+        }
+
+        private bool newPlus;
+
+        [JsonPropertyName("NewPlus")] // This key must match newplus::constants::non_localizable
+        public bool NewPlus
+        {
+            get => newPlus;
+            set
+            {
+                if (newPlus != value)
+                {
+                    LogTelemetryEvent(value);
+                    newPlus = value;
+                }
+            }
+        }
+
+        private bool workspaces; // defaulting to off
+
+        [JsonPropertyName("Workspaces")]
+        public bool Workspaces
+        {
+            get => workspaces;
+            set
+            {
+                if (workspaces != value)
+                {
+                    LogTelemetryEvent(value);
+                    workspaces = value;
+                    NotifyChange();
+                }
+            }
+        }
+
+        private bool cmdPal = true;
+
+        [JsonPropertyName("CmdPal")]
+        public bool CmdPal
+        {
+            get => cmdPal;
+            set
+            {
+                if (cmdPal != value)
+                {
+                    LogTelemetryEvent(value);
+                    cmdPal = value;
+                }
+            }
+        }
+
+        private bool zoomIt;
+
+        [JsonPropertyName("ZoomIt")]
+        public bool ZoomIt
+        {
+            get => zoomIt;
+            set
+            {
+                if (zoomIt != value)
+                {
+                    LogTelemetryEvent(value);
+                    zoomIt = value;
+                    NotifyChange();
+                }
+            }
+        }
+
+        private bool autoHideCursor; // defaulting to off
+
+        [JsonPropertyName("AutoHideCursor")]
+        public bool AutoHideCursor
+        {
+            get => autoHideCursor;
+            set
+            {
+                if (autoHideCursor != value)
+                {
+                    LogTelemetryEvent(value);
+                    autoHideCursor = value;
+                }
+            }
+        }
+
+        private bool cursorWrap; // defaulting to off
+
+        [JsonPropertyName("CursorWrap")]
+        public bool CursorWrap
+        {
+            get => cursorWrap;
+            set
+            {
+                if (cursorWrap != value)
+                {
+                    LogTelemetryEvent(value);
+                    cursorWrap = value;
+                }
+            }
+        }
+
+        private bool mouseButtonLock; // defaulting to off
+
+        [JsonPropertyName("MouseButtonLock")]
+        public bool MouseButtonLock
+        {
+            get => mouseButtonLock;
+            set
+            {
+                if (mouseButtonLock != value)
+                {
+                    LogTelemetryEvent(value);
+                    mouseButtonLock = value;
+                    NotifyChange();
+                }
+            }
+        }
+
+        private bool lightSwitch;
+
+        [JsonPropertyName("LightSwitch")]
+        public bool LightSwitch
+        {
+            get => lightSwitch;
+            set
+            {
+                if (lightSwitch != value)
+                {
+                    LogTelemetryEvent(value);
+                    lightSwitch = value;
+                    NotifyChange();
+                }
+            }
+        }
+
+        private bool powerDisplay;
+
+        [JsonPropertyName("PowerDisplay")]
+        public bool PowerDisplay
+        {
+            get => powerDisplay;
+            set
+            {
+                if (powerDisplay != value)
+                {
+                    LogTelemetryEvent(value);
+                    powerDisplay = value;
+                    NotifyChange();
+                }
+            }
+        }
+
+        private bool grabAndMove;
+
+        [JsonPropertyName("GrabAndMove")]
+        public bool GrabAndMove
+        {
+            get => grabAndMove;
+            set
+            {
+                if (grabAndMove != value)
+                {
+                    LogTelemetryEvent(value);
+                    grabAndMove = value;
+                    NotifyChange();
+                }
+            }
+        }
+
+        private void NotifyChange()
+        {
+            notifyEnabledChangedAction?.Invoke();
+        }
+
         public string ToJsonString()
         {
             return JsonSerializer.Serialize(this);
@@ -332,6 +647,11 @@ namespace Microsoft.PowerToys.Settings.UI.Library
                 Name = moduleName,
             };
             PowerToysTelemetry.Log.WriteEvent(dataEvent);
+        }
+
+        internal void AddEnabledModuleChangeNotification(Action callBack)
+        {
+            notifyEnabledChangedAction = callBack;
         }
     }
 }

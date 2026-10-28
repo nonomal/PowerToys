@@ -15,6 +15,7 @@
 #include <common/utils/package.h>
 #include <common/utils/process_path.h>
 #include <common/utils/resources.h>
+#include "RuntimeRegistration.h"
 
 #include <atomic>
 
@@ -162,10 +163,29 @@ class PowerRenameModule : public PowertoyModuleIface
 {
 private:
     // Enabled by default
-    bool m_enabled = true;
+    bool m_enabled = false;
     std::wstring app_name;
     //contains the non localized key of the powertoy
     std::wstring app_key;
+
+    // Update registration based on enabled state
+    void UpdateRegistration(bool enabled)
+    {
+        if (enabled)
+        {
+#if defined(ENABLE_REGISTRATION) || defined(NDEBUG)
+            PowerRenameRuntimeRegistration::EnsureRegistered();
+            Logger::info(L"PowerRename context menu registered");
+#endif
+        }
+        else
+        {
+#if defined(ENABLE_REGISTRATION) || defined(NDEBUG)
+            PowerRenameRuntimeRegistration::Unregister();
+            Logger::info(L"PowerRename context menu unregistered");
+#endif
+        }
+    }
 
 public:
     // Return the localized display name of the powertoy
@@ -196,22 +216,20 @@ public:
         {
             std::wstring path = get_module_folderpath(g_hInst);
             std::wstring packageUri = path + L"\\PowerRenameContextMenuPackage.msix";
-
-            if (!package::IsPackageRegistered(PowerRenameConstants::ModulePackageDisplayName))
+            if (!package::IsPackageRegisteredWithPowerToysVersion(PowerRenameConstants::ModulePackageDisplayName))
             {
                 package::RegisterSparsePackage(path, packageUri);
             }
         }
-
-        save_settings();
+        UpdateRegistration(m_enabled);
     }
 
     // Disable the powertoy
     virtual void disable()
     {
-        Logger::info(L"PowerRename disabled");
         m_enabled = false;
-        save_settings();
+        Logger::info(L"PowerRename disabled");
+        UpdateRegistration(m_enabled);
     }
 
     // Returns if the powertoy is enabled
@@ -311,13 +329,12 @@ public:
     void init_settings()
     {
         m_enabled = CSettingsInstance().GetEnabled();
+        UpdateRegistration(m_enabled);
         Trace::EnablePowerRename(m_enabled);
     }
 
     void save_settings()
     {
-        CSettingsInstance().SetEnabled(m_enabled);
-        CSettingsInstance().Save();
         Trace::EnablePowerRename(m_enabled);
     }
 

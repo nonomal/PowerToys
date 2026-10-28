@@ -4,23 +4,26 @@
 
 using System;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using global::PowerToys.GPOWrapper;
+using Microsoft.PowerToys.Settings.UI.Helpers;
 using Microsoft.PowerToys.Settings.UI.Library;
 using Microsoft.PowerToys.Settings.UI.Library.Helpers;
 using Microsoft.PowerToys.Settings.UI.Library.Interfaces;
 using Microsoft.PowerToys.Settings.UI.Library.ViewModels.Commands;
+using PowerToys.Interop;
 using Settings.UI.Library.Enumerations;
 
 namespace Microsoft.PowerToys.Settings.UI.ViewModels
 {
-    public class HostsViewModel : Observable
+    public partial class HostsViewModel : Observable
     {
         private bool _isElevated;
         private GpoRuleConfigured _enabledGpoRuleConfiguration;
         private bool _enabledStateIsGPOConfigured;
         private bool _isEnabled;
 
-        private ISettingsUtils SettingsUtils { get; set; }
+        private SettingsUtils SettingsUtils { get; set; }
 
         private GeneralSettings GeneralSettingsConfig { get; set; }
 
@@ -29,6 +32,8 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
         private Func<string, int> SendConfigMSG { get; }
 
         public ButtonClickCommand LaunchEventHandler => new ButtonClickCommand(Launch);
+
+        public ButtonClickCommand SelectBackupPathEventHandler => new ButtonClickCommand(SelectBackupPath);
 
         public bool IsEnabled
         {
@@ -76,6 +81,19 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             }
         }
 
+        public bool LoopbackDuplicates
+        {
+            get => Settings.Properties.LoopbackDuplicates;
+            set
+            {
+                if (value != Settings.Properties.LoopbackDuplicates)
+                {
+                    Settings.Properties.LoopbackDuplicates = value;
+                    NotifyPropertyChanged();
+                }
+            }
+        }
+
         public bool LaunchAdministrator
         {
             get => Settings.Properties.LaunchAdministrator;
@@ -89,6 +107,19 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             }
         }
 
+        public bool NoLeadingSpaces
+        {
+            get => Settings.Properties.NoLeadingSpaces;
+            set
+            {
+                if (value != Settings.Properties.NoLeadingSpaces)
+                {
+                    Settings.Properties.NoLeadingSpaces = value;
+                    NotifyPropertyChanged();
+                }
+            }
+        }
+
         public int AdditionalLinesPosition
         {
             get => (int)Settings.Properties.AdditionalLinesPosition;
@@ -96,19 +127,105 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             {
                 if (value != (int)Settings.Properties.AdditionalLinesPosition)
                 {
-                    Settings.Properties.AdditionalLinesPosition = (AdditionalLinesPosition)value;
+                    Settings.Properties.AdditionalLinesPosition = (HostsAdditionalLinesPosition)value;
                     NotifyPropertyChanged();
                 }
             }
         }
 
-        public HostsViewModel(ISettingsUtils settingsUtils, ISettingsRepository<GeneralSettings> settingsRepository, ISettingsRepository<HostsSettings> moduleSettingsRepository, Func<string, int> ipcMSGCallBackFunc, bool isElevated)
+        public int Encoding
+        {
+            get => (int)Settings.Properties.Encoding;
+            set
+            {
+                if (value != (int)Settings.Properties.Encoding)
+                {
+                    Settings.Properties.Encoding = (HostsEncoding)value;
+                    NotifyPropertyChanged();
+                }
+            }
+        }
+
+        public bool BackupHosts
+        {
+            get => Settings.Properties.BackupHosts;
+            set
+            {
+                if (value != Settings.Properties.BackupHosts)
+                {
+                    Settings.Properties.BackupHosts = value;
+                    NotifyPropertyChanged();
+                }
+            }
+        }
+
+        public string BackupPath
+        {
+            get => Settings.Properties.BackupPath;
+            set
+            {
+                if (value != Settings.Properties.BackupPath)
+                {
+                    Settings.Properties.BackupPath = value;
+                    NotifyPropertyChanged();
+                }
+            }
+        }
+
+        public int DeleteBackupsMode
+        {
+            get => (int)Settings.Properties.DeleteBackupsMode;
+            set
+            {
+                if (value != (int)Settings.Properties.DeleteBackupsMode)
+                {
+                    Settings.Properties.DeleteBackupsMode = (HostsDeleteBackupMode)value;
+                    NotifyPropertyChanged();
+                    OnPropertyChanged(nameof(MinimumBackupsCount));
+                }
+            }
+        }
+
+        public int DeleteBackupsDays
+        {
+            get => Settings.Properties.DeleteBackupsDays;
+            set
+            {
+                if (value != Settings.Properties.DeleteBackupsDays)
+                {
+                    Settings.Properties.DeleteBackupsDays = value;
+                    NotifyPropertyChanged();
+                }
+            }
+        }
+
+        public int DeleteBackupsCount
+        {
+            get => Settings.Properties.DeleteBackupsCount;
+            set
+            {
+                if (value != Settings.Properties.DeleteBackupsCount)
+                {
+                    Settings.Properties.DeleteBackupsCount = value;
+                    NotifyPropertyChanged();
+                }
+            }
+        }
+
+        public int MinimumBackupsCount => DeleteBackupsMode == 1 ? 1 : 0;
+
+        public HostsViewModel(SettingsUtils settingsUtils, ISettingsRepository<GeneralSettings> settingsRepository, ISettingsRepository<HostsSettings> moduleSettingsRepository, Func<string, int> ipcMSGCallBackFunc, bool isElevated)
         {
             SettingsUtils = settingsUtils;
             GeneralSettingsConfig = settingsRepository.SettingsConfig;
             Settings = moduleSettingsRepository.SettingsConfig;
             SendConfigMSG = ipcMSGCallBackFunc;
             _isElevated = isElevated;
+            InitializeEnabledValue();
+        }
+
+        private void InitializeEnabledValue()
+        {
             _enabledGpoRuleConfiguration = GPOWrapper.GetConfiguredHostsFileEditorEnabledValue();
             if (_enabledGpoRuleConfiguration == GpoRuleConfigured.Disabled || _enabledGpoRuleConfiguration == GpoRuleConfigured.Enabled)
             {
@@ -124,20 +241,39 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
 
         public void Launch()
         {
-            var actionName = "Launch";
+            string eventName = !_isElevated && LaunchAdministrator
+                ? Constants.ShowHostsAdminSharedEvent()
+                : Constants.ShowHostsSharedEvent();
 
-            if (!_isElevated && LaunchAdministrator)
+            using (var eventHandle = new EventWaitHandle(false, EventResetMode.AutoReset, eventName))
             {
-                actionName = "LaunchAdministrator";
+                eventHandle.Set();
             }
-
-            SendConfigMSG("{\"action\":{\"Hosts\":{\"action_name\":\"" + actionName + "\", \"value\":\"\"}}}");
         }
 
         public void NotifyPropertyChanged([CallerMemberName] string propertyName = null)
         {
             OnPropertyChanged(propertyName);
             SettingsUtils.SaveSettings(Settings.ToJsonString(), HostsSettings.ModuleName);
+        }
+
+        public void RefreshEnabledState()
+        {
+            InitializeEnabledValue();
+            OnPropertyChanged(nameof(IsEnabled));
+        }
+
+        public void SelectBackupPath()
+        {
+            // This function was changed to use the shell32 API to open folder dialog
+            // as the old one (PickSingleFolderAsync) can't work when the process is elevated
+            // TODO: go back PickSingleFolderAsync when it's fixed
+            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.GetSettingsWindow());
+            var result = ShellGetFolder.GetFolderDialog(hwnd);
+            if (!string.IsNullOrEmpty(result))
+            {
+                BackupPath = result;
+            }
         }
     }
 }

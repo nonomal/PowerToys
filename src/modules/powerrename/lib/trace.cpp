@@ -2,26 +2,18 @@
 #include "trace.h"
 #include "Settings.h"
 
+#include <common/Telemetry/TraceBase.h>
+
 TRACELOGGING_DEFINE_PROVIDER(
-      g_hProvider,
-      "Microsoft.PowerToys",
-      // {38e8889b-9731-53f5-e901-e8a7c1753074}
-      (0x38e8889b, 0x9731, 0x53f5, 0xe9, 0x01, 0xe8, 0xa7, 0xc1, 0x75, 0x30, 0x74),
-      TraceLoggingOptionProjectTelemetry());
-
-void Trace::RegisterProvider() noexcept
-{
-    TraceLoggingRegister(g_hProvider);
-}
-
-void Trace::UnregisterProvider() noexcept
-{
-    TraceLoggingUnregister(g_hProvider);
-}
+    g_hProvider,
+    "Microsoft.PowerToys",
+    // {38e8889b-9731-53f5-e901-e8a7c1753074}
+    (0x38e8889b, 0x9731, 0x53f5, 0xe9, 0x01, 0xe8, 0xa7, 0xc1, 0x75, 0x30, 0x74),
+    TraceLoggingOptionProjectTelemetry());
 
 void Trace::Invoked() noexcept
 {
-  TraceLoggingWrite(
+    TraceLoggingWriteWrapper(
         g_hProvider,
         "PowerRename_Invoked",
         ProjectTelemetryPrivacyDataTag(ProjectTelemetryTag_ProductAndServicePerformance),
@@ -30,7 +22,7 @@ void Trace::Invoked() noexcept
 
 void Trace::InvokedRet(_In_ HRESULT hr) noexcept
 {
-    TraceLoggingWrite(
+    TraceLoggingWriteWrapper(
         g_hProvider,
         "PowerRename_InvokedRet",
         ProjectTelemetryPrivacyDataTag(ProjectTelemetryTag_ProductAndServicePerformance),
@@ -38,9 +30,19 @@ void Trace::InvokedRet(_In_ HRESULT hr) noexcept
         TraceLoggingKeyword(PROJECT_KEYWORD_MEASURE));
 }
 
+void Trace::ServicingWindowInitialization(_In_ HRESULT hr) noexcept
+{
+    TraceLoggingWriteWrapper(
+        g_hProvider,
+        "PowerRename_ServicingWindowInitialization",
+        ProjectTelemetryPrivacyDataTag(ProjectTelemetryTag_ProductAndServicePerformance),
+        TraceLoggingHResult(hr),
+        TraceLoggingKeyword(PROJECT_KEYWORD_MEASURE));
+}
+
 void Trace::EnablePowerRename(_In_ bool enabled) noexcept
 {
-    TraceLoggingWrite(
+    TraceLoggingWriteWrapper(
         g_hProvider,
         "PowerRename_EnablePowerRename",
         ProjectTelemetryPrivacyDataTag(ProjectTelemetryTag_ProductAndServicePerformance),
@@ -50,7 +52,7 @@ void Trace::EnablePowerRename(_In_ bool enabled) noexcept
 
 void Trace::UIShownRet(_In_ HRESULT hr) noexcept
 {
-    TraceLoggingWrite(
+    TraceLoggingWriteWrapper(
         g_hProvider,
         "PowerRename_UIShownRet",
         ProjectTelemetryPrivacyDataTag(ProjectTelemetryTag_ProductAndServicePerformance),
@@ -60,7 +62,7 @@ void Trace::UIShownRet(_In_ HRESULT hr) noexcept
 
 void Trace::RenameOperation(_In_ UINT totalItemCount, _In_ UINT selectedItemCount, _In_ UINT renameItemCount, _In_ DWORD flags, _In_ PCWSTR extensionList) noexcept
 {
-    TraceLoggingWrite(
+    TraceLoggingWriteWrapper(
         g_hProvider,
         "PowerRename_RenameOperation",
         ProjectTelemetryPrivacyDataTag(ProjectTelemetryTag_ProductAndServicePerformance),
@@ -74,7 +76,7 @@ void Trace::RenameOperation(_In_ UINT totalItemCount, _In_ UINT selectedItemCoun
 
 void Trace::SettingsChanged() noexcept
 {
-    TraceLoggingWrite(
+    TraceLoggingWriteWrapper(
         g_hProvider,
         "PowerRename_SettingsChanged",
         ProjectTelemetryPrivacyDataTag(ProjectTelemetryTag_ProductAndServicePerformance),

@@ -1,14 +1,20 @@
+#pragma warning disable IDE0073
 // Copyright (c) Brice Lambson
 // The Brice Lambson licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.  Code forked from Brice Lambson's https://github.com/bricelam/ImageResizer/
+#pragma warning restore IDE0073
 
 using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.IO;
 using System.IO.Abstractions;
-using System.Windows.Media.Imaging;
+using System.Threading.Tasks;
+
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+using Windows.Graphics.Imaging;
 
 [module: System.Diagnostics.CodeAnalysis.SuppressMessage("StyleCop.CSharp.DocumentationRules", "SA1636:FileHeaderCopyrightTextMustMatch", Justification = "File created under PowerToys.")]
 
@@ -26,17 +32,20 @@ namespace ImageResizer.Test
             }
         }
 
-        public static void Image(string path, Action<BitmapDecoder> action)
+        public static async Task ImageAsync(string path, Action<BitmapDecoder> action)
         {
-            using (var stream = _fileSystem.File.OpenRead(path))
-            {
-                var image = BitmapDecoder.Create(
-                    stream,
-                    BitmapCreateOptions.PreservePixelFormat,
-                    BitmapCacheOption.None);
+            using var stream = _fileSystem.File.OpenRead(path);
+            var winrtStream = stream.AsRandomAccessStream();
+            var decoder = await BitmapDecoder.CreateAsync(winrtStream);
+            action(decoder);
+        }
 
-                action(image);
-            }
+        public static async Task ImageAsync(string path, Func<BitmapDecoder, Task> action)
+        {
+            using var stream = _fileSystem.File.OpenRead(path);
+            var winrtStream = stream.AsRandomAccessStream();
+            var decoder = await BitmapDecoder.CreateAsync(winrtStream);
+            await action(decoder);
         }
 
         public static RaisedEvent<NotifyCollectionChangedEventArgs> Raises<T>(
@@ -75,7 +84,25 @@ namespace ImageResizer.Test
             return raisedEvent;
         }
 
-        public class RaisedEvent<TArgs>
+        public static IList<RaisedEvent<PropertyChangedEventArgs>> RaisesAll<T>(
+            Action<PropertyChangedEventHandler> attach,
+            Action<PropertyChangedEventHandler> detach,
+            Action testCode)
+            where T : PropertyChangedEventArgs
+        {
+            var events = new List<RaisedEvent<PropertyChangedEventArgs>>();
+            PropertyChangedEventHandler handler = (sender, e)
+                => events.Add(new RaisedEvent<PropertyChangedEventArgs>(sender, e));
+            attach(handler);
+            testCode();
+            detach(handler);
+
+            Assert.IsTrue(events.Count > 0, "Expected at least one PropertyChanged event.");
+
+            return events;
+        }
+
+        public sealed class RaisedEvent<TArgs>
         {
             public RaisedEvent(object sender, TArgs args)
             {

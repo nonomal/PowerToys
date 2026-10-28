@@ -6,9 +6,13 @@
 
 #include <array>
 #include <optional>
+#include <functional>
+#include <unordered_map>
 
 // Initializes and runs windows message loop
-inline int run_message_loop(const bool until_idle = false, const std::optional<uint32_t> timeout_ms = {})
+inline int run_message_loop(const bool until_idle = false,
+                            const std::optional<uint32_t> timeout_ms = {},
+                            std::unordered_map<DWORD, std::function<void()>> wm_app_msg_callbacks = {})
 {
     MSG msg{};
     bool stop = false;
@@ -24,12 +28,67 @@ inline int run_message_loop(const bool until_idle = false, const std::optional<u
         DispatchMessageW(&msg);
         stop = until_idle && !PeekMessageW(&msg, nullptr, 0, 0, PM_NOREMOVE);
         stop = stop || (msg.message == WM_TIMER && msg.wParam == timerId);
+
+        if (auto it = wm_app_msg_callbacks.find(msg.message); it != end(wm_app_msg_callbacks))
+            it->second();
     }
+
     if (timeout_ms.has_value())
     {
         KillTimer(nullptr, timerId);
     }
+
     return static_cast<int>(msg.wParam);
+}
+
+// Handles WM_QUERYENDSESSION / WM_ENDSESSION for a window whose process has no
+// unsaved user state of its own.
+//
+// WndProcs should call this at the top of their dispatch and return early
+// when it reports the message was handled. Without this, the OS quiesce
+// handshake on shutdown / sign-out / restart has nothing to wait on except
+// the full timeout, producing APPLICATION_HANG_QUIESCE failure buckets even
+// though the process is idle in GetMessage.
+//
+// On WM_QUERYENDSESSION we always allow the session to end (returns TRUE).
+// On WM_ENDSESSION with wparam == TRUE we DestroyWindow(window), which then
+// drives the existing WM_DESTROY -> PostQuitMessage(0) path and lets
+// run_message_loop unwind cleanly. wparam == FALSE means the session was
+// cancelled by another application's WM_QUERYENDSESSION response, in which
+// case we must not tear down.
+//
+// Returns true if the message was an end-session message and out_result has
+// been set; the caller should return out_result without further dispatch.
+//
+// When out_system_session_ending is non-null it is set to true exactly when
+// the full Windows session is ending. ENDSESSION_CLOSEAPP only closes this
+// application, so callers must retain their normal child-process cleanup.
+// The value is left untouched for all other messages and cancelled shutdowns.
+inline bool handle_stateless_session_end_message(HWND window,
+                                                 UINT message,
+                                                 WPARAM wparam,
+                                                 LPARAM lparam,
+                                                 LRESULT& out_result,
+                                                 bool* out_system_session_ending = nullptr)
+{
+    switch (message)
+    {
+    case WM_QUERYENDSESSION:
+        out_result = TRUE;
+        return true;
+    case WM_ENDSESSION:
+        if (wparam)
+        {
+            if (out_system_session_ending && !(lparam & ENDSESSION_CLOSEAPP))
+            {
+                *out_system_session_ending = true;
+            }
+            DestroyWindow(window);
+        }
+        out_result = 0;
+        return true;
+    }
+    return false;
 }
 
 // Check if window is part of the shell or the taskbar.
@@ -60,7 +119,7 @@ template<typename T>
 inline T GetWindowCreateParam(LPARAM lparam)
 {
     static_assert(sizeof(T) <= sizeof(void*));
-    T data{ (T)(reinterpret_cast<CREATESTRUCT*>(lparam)->lpCreateParams) };
+    T data{ static_cast<T>(reinterpret_cast<CREATESTRUCT*>(lparam)->lpCreateParams) };
     return data;
 }
 
@@ -74,5 +133,5 @@ inline void StoreWindowParam(HWND window, T data)
 template<typename T>
 inline T GetWindowParam(HWND window)
 {
-    return (T)GetWindowLongPtrW(window, GWLP_USERDATA);
+    return reinterpret_cast<T>(GetWindowLongPtrW(window, GWLP_USERDATA));
 }

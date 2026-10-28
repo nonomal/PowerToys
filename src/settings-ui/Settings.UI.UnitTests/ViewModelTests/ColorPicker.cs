@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information.
 
 using System.Text.Json;
+
 using Microsoft.PowerToys.Settings.UI.Library;
 using Microsoft.PowerToys.Settings.UI.UnitTests.BackwardsCompatibility;
 using Microsoft.PowerToys.Settings.UI.UnitTests.Mocks;
@@ -26,7 +27,7 @@ namespace ViewModelTests
         {
             // Arrange
             var mockIOProvider = BackCompatTestProperties.GetModuleIOProvider(version, ColorPickerSettings.ModuleName, fileName);
-            var settingPathMock = new Mock<ISettingsPath>();
+            var settingPathMock = new Mock<SettingPath>();
 
             var mockSettingsUtils = new SettingsUtils(mockIOProvider.Object, settingPathMock.Object);
             ColorPickerSettings originalSettings = mockSettingsUtils.GetSettingsOrDefault<ColorPickerSettings>(ColorPickerSettings.ModuleName);
@@ -66,7 +67,7 @@ namespace ViewModelTests
             using (var viewModel = new ColorPickerViewModel(
                 ISettingsUtilsMocks.GetStubSettingsUtils<ColorPickerSettings>().Object,
                 SettingsRepository<GeneralSettings>.GetInstance(ISettingsUtilsMocks.GetStubSettingsUtils<GeneralSettings>().Object),
-                SettingsRepository<ColorPickerSettings>.GetInstance(new SettingsUtils()),
+                SettingsRepository<ColorPickerSettings>.GetInstance(SettingsUtils.Default),
                 ColorPickerIsEnabledByDefaultIPC))
             {
                 Assert.IsTrue(viewModel.IsEnabled);

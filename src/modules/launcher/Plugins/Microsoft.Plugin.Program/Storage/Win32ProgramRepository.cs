@@ -9,8 +9,10 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.IO.Abstractions;
 using System.Threading.Tasks;
+
 using Wox.Infrastructure.Storage;
 using Wox.Plugin.Logger;
+
 using Win32Program = Microsoft.Plugin.Program.Programs.Win32Program;
 
 namespace Microsoft.Plugin.Program.Storage
@@ -30,6 +32,8 @@ namespace Microsoft.Plugin.Program.Storage
         private Collection<string> extensionsToWatch = new Collection<string> { "*.exe", $"*{LnkExtension}", "*.appref-ms", $"*{UrlExtension}" };
 
         private static ConcurrentQueue<string> commonEventHandlingQueue = new ConcurrentQueue<string>();
+
+        public static readonly int OnRenamedEventWaitTime = 1000;
 
         public Win32ProgramRepository(IList<IFileSystemWatcherWrapper> fileSystemWatcherHelpers, ProgramPluginSettings settings, string[] pathsToWatch)
         {
@@ -73,7 +77,10 @@ namespace Microsoft.Plugin.Program.Storage
                 _fileSystemWatcherHelpers[index].NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite;
 
                 // filtering the app types that we want to monitor
-                _fileSystemWatcherHelpers[index].Filters = extensionsToWatch;
+                foreach (string extension in extensionsToWatch)
+                {
+                    _fileSystemWatcherHelpers[index].Filters.Add(extension);
+                }
 
                 // Registering the event handlers
                 _fileSystemWatcherHelpers[index].Created += OnAppCreated;
@@ -89,10 +96,16 @@ namespace Microsoft.Plugin.Program.Storage
             }
         }
 
-        private void OnAppRenamed(object sender, RenamedEventArgs e)
+        private async Task DoOnAppRenamedAsync(object sender, RenamedEventArgs e)
         {
             string oldPath = e.OldFullPath;
             string newPath = e.FullPath;
+
+            // fix for https://github.com/microsoft/PowerToys/issues/34391
+            // the msi installer creates a shortcut, which is detected by the PT Run and ends up in calling this OnAppRenamed method
+            // the thread needs to be halted for a short time to avoid locking the new shortcut file as we read it; otherwise, the lock causes
+            // in the issue scenario that a warning is popping up during the msi install process.
+            await Task.Delay(OnRenamedEventWaitTime).ConfigureAwait(false);
 
             string extension = Path.GetExtension(newPath);
             Win32Program.ApplicationType oldAppType = Win32Program.GetAppTypeFromPath(oldPath);
@@ -116,7 +129,7 @@ namespace Microsoft.Plugin.Program.Storage
             }
             catch (Exception ex)
             {
-                Log.Exception($"OnAppRenamed-{extension} Program|{e.OldName}|Unable to create program from {oldPath}", ex, GetType());
+                Log.Exception($"DoOnAppRenamedAsync-{extension} Program|{e.OldName}|Unable to create program from {oldPath}", ex, GetType());
             }
 
             // To remove the old app which has been renamed and to add the new application.
@@ -138,6 +151,21 @@ namespace Microsoft.Plugin.Program.Storage
             }
         }
 
+        private void OnAppRenamed(object sender, RenamedEventArgs e)
+        {
+            Task.Run(async () =>
+            {
+                try
+                {
+                    await DoOnAppRenamedAsync(sender, e).ConfigureAwait(false);
+                }
+                catch (Exception e)
+                {
+                    Log.Exception($"OnAppRenamed throw exception.", e, e.GetType());
+                }
+            }).ConfigureAwait(false);
+        }
+
         private void OnAppDeleted(object sender, FileSystemEventArgs e)
         {
             string path = e.FullPath;
@@ -150,7 +178,7 @@ namespace Microsoft.Plugin.Program.Storage
                 // Using OrdinalIgnoreCase since this is used internally
                 if (extension.Equals(LnkExtension, StringComparison.OrdinalIgnoreCase))
                 {
-                    app = GetAppWithSameLnkResolvedPath(path);
+                    app = GetAppWithSameLnkFilePath(path);
                     if (app == null)
                     {
                         // Cancelled links won't have a resolved path.
@@ -178,12 +206,12 @@ namespace Microsoft.Plugin.Program.Storage
         }
 
         // When a URL application is deleted, we can no longer get the HashCode directly from the path because the FullPath a Url app is the URL obtained from reading the file
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Globalization", "CA1309:Use ordinal string comparison", Justification = "Using CurrentCultureIgnoreCase since application names could be dependent on currentculture See: https://github.com/microsoft/PowerToys/pull/5847/files#r468245190")]
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Globalization", "CA1309:Use ordinal string comparison", Justification = "Using CurrentCultureIgnoreCase since application names could be dependent on current culture See: https://github.com/microsoft/PowerToys/pull/5847/files#r468245190")]
         private Win32Program GetAppWithSameNameAndExecutable(string name, string executableName)
         {
             foreach (Win32Program app in Items)
             {
-                // Using CurrentCultureIgnoreCase since application names could be dependent on currentculture See: https://github.com/microsoft/PowerToys/pull/5847/files#r468245190
+                // Using CurrentCultureIgnoreCase since application names could be dependent on current culture See: https://github.com/microsoft/PowerToys/pull/5847/files#r468245190
                 if (name.Equals(app.Name, StringComparison.CurrentCultureIgnoreCase) && executableName.Equals(app.ExecutableName, StringComparison.CurrentCultureIgnoreCase))
                 {
                     return app;
@@ -195,12 +223,12 @@ namespace Microsoft.Plugin.Program.Storage
 
         // To mitigate the issue faced (as stated above) when a shortcut application is renamed, the Exe FullPath and executable name must be obtained.
         // Unlike the rename event args, since we do not have a newPath, we iterate through all the programs and find the one with the same LnkResolved path.
-        private Programs.Win32Program GetAppWithSameLnkResolvedPath(string lnkResolvedPath)
+        private Programs.Win32Program GetAppWithSameLnkFilePath(string lnkFilePath)
         {
             foreach (Programs.Win32Program app in Items)
             {
                 // Using Invariant / OrdinalIgnoreCase since we're comparing paths
-                if (lnkResolvedPath.ToUpperInvariant().Equals(app.LnkResolvedPath, StringComparison.OrdinalIgnoreCase))
+                if (lnkFilePath.ToUpperInvariant().Equals(app.LnkFilePath, StringComparison.OrdinalIgnoreCase))
                 {
                     return app;
                 }

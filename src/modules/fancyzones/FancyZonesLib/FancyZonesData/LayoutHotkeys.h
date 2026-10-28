@@ -4,6 +4,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <vector>
 
 #include <FancyZonesLib/ModuleConstants.h>
 
@@ -32,13 +33,15 @@ public:
         std::wstring saveFolderPath = PTSettingsHelper::get_module_save_folder_location(NonLocalizable::ModuleKey);
 #if defined(UNIT_TESTS)
         return saveFolderPath + L"\\test-layout-hotkeys.json";
-#endif
+#else
         return saveFolderPath + L"\\layout-hotkeys.json";
+#endif
     }
 
-    void LoadData(); 
-    
+    void LoadData();
+
     std::optional<GUID> GetLayoutId(int key) const noexcept;
+    std::vector<GUID> GetLayoutIds() const noexcept; // in hotkey order
     size_t GetHotkeysCount() const noexcept;
 
 private:

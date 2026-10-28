@@ -11,20 +11,24 @@ namespace Awake.Core
     {
         public static void AddRange<T>(this ICollection<T> target, IEnumerable<T> source)
         {
-            if (target == null)
-            {
-                throw new ArgumentNullException(nameof(target));
-            }
+            ArgumentNullException.ThrowIfNull(target);
+            ArgumentNullException.ThrowIfNull(source);
 
-            if (source == null)
-            {
-                throw new ArgumentNullException(nameof(source));
-            }
-
-            foreach (var element in source)
+            foreach (T? element in source)
             {
                 target.Add(element);
             }
+        }
+
+        public static string ToHumanReadableString(this TimeSpan timeSpan)
+        {
+            // Format as H:MM:SS or M:SS depending on total hours
+            if (timeSpan.TotalHours >= 1)
+            {
+                return $"{(int)timeSpan.TotalHours}:{timeSpan.Minutes:D2}:{timeSpan.Seconds:D2}";
+            }
+
+            return $"{timeSpan.Minutes}:{timeSpan.Seconds:D2}";
         }
     }
 }

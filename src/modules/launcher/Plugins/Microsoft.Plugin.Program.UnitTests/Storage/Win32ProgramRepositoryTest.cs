@@ -3,16 +3,19 @@
 // See the LICENSE file in the project root for more information.
 
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
-using Microsoft.Plugin.Program.Programs;
+using System.Threading.Tasks;
 using Microsoft.Plugin.Program.Storage;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Moq;
+using Wox.Infrastructure;
 using Wox.Infrastructure.FileSystemHelper;
 using Wox.Infrastructure.Storage;
+
 using Win32Program = Microsoft.Plugin.Program.Programs.Win32Program;
 
 namespace Microsoft.Plugin.Program.UnitTests.Storage
@@ -25,6 +28,8 @@ namespace Microsoft.Plugin.Program.UnitTests.Storage
 
         private List<IFileSystemWatcherWrapper> _fileSystemWatchers;
         private List<Mock<IFileSystemWatcherWrapper>> _fileSystemMocks;
+        private static readonly string[] Path = new string[] { "URL=steam://rungameid/1258080", "IconFile=iconFile" };
+        private static readonly string[] ExpectedFilters = new string[] { "*.exe", "*.lnk", "*.appref-ms", "*.url" };
 
         [TestInitialize]
         public void SetFileSystemWatchers()
@@ -34,8 +39,20 @@ namespace Microsoft.Plugin.Program.UnitTests.Storage
             for (int index = 0; index < _pathsToWatch.Length; index++)
             {
                 var mockFileWatcher = new Mock<IFileSystemWatcherWrapper>();
+                mockFileWatcher.SetupGet(watcher => watcher.Filters).Returns(new Collection<string>());
                 _fileSystemMocks.Add(mockFileWatcher);
                 _fileSystemWatchers.Add(mockFileWatcher.Object);
+            }
+        }
+
+        [TestMethod]
+        public void Win32ProgramRepositoryAddsExpectedFileSystemWatcherFilters()
+        {
+            _ = new Win32ProgramRepository(_fileSystemWatchers, _settings, _pathsToWatch);
+
+            foreach (var watcher in _fileSystemWatchers)
+            {
+                CollectionAssert.AreEqual(ExpectedFilters, watcher.Filters);
             }
         }
 
@@ -111,7 +128,7 @@ namespace Microsoft.Plugin.Program.UnitTests.Storage
 
         [DataTestMethod]
         [DataRow("directory", "oldpath.appref-ms", "newpath.appref-ms")]
-        public void Win32ProgramRepositoryMustCallOnAppRenamedForApprefAppsWhenRenamedEventIsRaised(string directory, string oldpath, string newpath)
+        public async Task Win32ProgramRepositoryMustCallOnAppRenamedForApprefAppsWhenRenamedEventIsRaised(string directory, string oldpath, string newpath)
         {
             // Arrange
             Win32ProgramRepository win32ProgramRepository = new Win32ProgramRepository(_fileSystemWatchers, _settings, _pathsToWatch);
@@ -126,6 +143,9 @@ namespace Microsoft.Plugin.Program.UnitTests.Storage
 
             // Act
             _fileSystemMocks[0].Raise(m => m.Renamed += null, e);
+
+            // We need to wait more than one second to make sure our test can pass
+            await Task.Delay(2 * Win32ProgramRepository.OnRenamedEventWaitTime).ConfigureAwait(false);
 
             // Assert
             Assert.AreEqual(1, win32ProgramRepository.Count());
@@ -180,7 +200,7 @@ namespace Microsoft.Plugin.Program.UnitTests.Storage
 
         [DataTestMethod]
         [DataRow("directory", "oldpath.appref-ms", "newpath.appref-ms")]
-        public void Win32ProgramRepositoryMustCallOnAppRenamedForExeAppsWhenRenamedEventIsRaised(string directory, string oldpath, string newpath)
+        public async Task Win32ProgramRepositoryMustCallOnAppRenamedForExeAppsWhenRenamedEventIsRaised(string directory, string oldpath, string newpath)
         {
             // Arrange
             Win32ProgramRepository win32ProgramRepository = new Win32ProgramRepository(_fileSystemWatchers, _settings, _pathsToWatch);
@@ -201,6 +221,9 @@ namespace Microsoft.Plugin.Program.UnitTests.Storage
             // Act
             _fileSystemMocks[0].Raise(m => m.Renamed += null, e);
 
+            // We need to wait more than one second to make sure our test can pass
+            await Task.Delay(2 * Win32ProgramRepository.OnRenamedEventWaitTime).ConfigureAwait(false);
+
             // Assert
             Assert.AreEqual(1, win32ProgramRepository.Count());
             Assert.IsTrue(win32ProgramRepository.Contains(newitem));
@@ -219,7 +242,7 @@ namespace Microsoft.Plugin.Program.UnitTests.Storage
 
             // File.ReadAllLines must be mocked for url applications
             var mockFile = new Mock<IFile>();
-            mockFile.Setup(m => m.ReadAllLines(It.IsAny<string>())).Returns(new string[] { "URL=steam://rungameid/1258080", "IconFile=iconFile" });
+            mockFile.Setup(m => m.ReadAllLines(It.IsAny<string>())).Returns(Path);
             Win32Program.FileWrapper = mockFile.Object;
 
             // Act
@@ -268,7 +291,7 @@ namespace Microsoft.Plugin.Program.UnitTests.Storage
 
             // File.ReadAllLines must be mocked for url applications
             var mockFile = new Mock<IFile>();
-            mockFile.Setup(m => m.ReadLines(It.IsAny<string>())).Returns(new string[] { "URL=steam://rungameid/1258080", "IconFile=iconFile" });
+            mockFile.Setup(m => m.ReadLines(It.IsAny<string>())).Returns(Path);
             Win32Program.FileWrapper = mockFile.Object;
 
             string fullPath = directory + "\\" + path;
@@ -284,7 +307,7 @@ namespace Microsoft.Plugin.Program.UnitTests.Storage
 
         [DataTestMethod]
         [DataRow("directory", "oldpath.url", "newpath.url")]
-        public void Win32ProgramRepositoryMustCallOnAppRenamedForUrlAppsWhenRenamedEventIsRaised(string directory, string oldpath, string newpath)
+        public async Task Win32ProgramRepositoryMustCallOnAppRenamedForUrlAppsWhenRenamedEventIsRaised(string directory, string oldpath, string newpath)
         {
             // Arrange
             Win32ProgramRepository win32ProgramRepository = new Win32ProgramRepository(_fileSystemWatchers, _settings, _pathsToWatch);
@@ -292,7 +315,7 @@ namespace Microsoft.Plugin.Program.UnitTests.Storage
 
             // File.ReadAllLines must be mocked for url applications
             var mockFile = new Mock<IFile>();
-            mockFile.Setup(m => m.ReadLines(It.IsAny<string>())).Returns(new string[] { "URL=steam://rungameid/1258080", "IconFile=iconFile" });
+            mockFile.Setup(m => m.ReadLines(It.IsAny<string>())).Returns(Path);
             Win32Program.FileWrapper = mockFile.Object;
 
             string oldFullPath = directory + "\\" + oldpath;
@@ -304,6 +327,9 @@ namespace Microsoft.Plugin.Program.UnitTests.Storage
 
             // Act
             _fileSystemMocks[0].Raise(m => m.Renamed += null, e);
+
+            // We need to wait more than one second to make sure our test can pass
+            await Task.Delay(2 * Win32ProgramRepository.OnRenamedEventWaitTime).ConfigureAwait(false);
 
             // Assert
             Assert.AreEqual(1, win32ProgramRepository.Count());
@@ -331,7 +357,7 @@ namespace Microsoft.Plugin.Program.UnitTests.Storage
                 ExecutableName = "path.exe",
                 ParentDirectory = "directory",
                 FullPath = "directory\\path.exe",
-                LnkResolvedPath = "directory\\path.lnk", // This must be equal for lnk applications
+                LnkFilePath = "directory\\path.lnk", // This must be equal for lnk applications
             };
             win32ProgramRepository.Add(item);
 
@@ -344,14 +370,14 @@ namespace Microsoft.Plugin.Program.UnitTests.Storage
 
         [DataTestMethod]
         [DataRow("directory", "oldpath.lnk", "path.lnk")]
-        public void Win32ProgramRepositoryMustCallOnAppRenamedForLnkAppsWhenRenamedEventIsRaised(string directory, string oldpath, string path)
+        public async Task Win32ProgramRepositoryMustCallOnAppRenamedForLnkAppsWhenRenamedEventIsRaised(string directory, string oldpath, string path)
         {
             // Arrange
             Win32ProgramRepository win32ProgramRepository = new Win32ProgramRepository(_fileSystemWatchers, _settings, _pathsToWatch);
             RenamedEventArgs e = new RenamedEventArgs(WatcherChangeTypes.Renamed, directory, path, oldpath);
 
             string oldFullPath = directory + "\\" + oldpath;
-            string fullPath = directory + "\\" + path;
+            string newFullPath = directory + "\\" + path;
             string linkingTo = Directory.GetCurrentDirectory();
 
             // ShellLinkHelper must be mocked for lnk applications
@@ -360,24 +386,16 @@ namespace Microsoft.Plugin.Program.UnitTests.Storage
             Win32Program.ShellLinkHelper = mockShellLink.Object;
 
             // old item and new item are the actual items when they are in existence
-            Win32Program olditem = new Win32Program
-            {
-                Name = "oldpath",
-                ExecutableName = oldpath,
-                FullPath = linkingTo,
-            };
-
-            Win32Program newitem = new Win32Program
-            {
-                Name = "path",
-                ExecutableName = path,
-                FullPath = linkingTo,
-            };
+            Win32Program olditem = Win32Program.GetAppFromPath(oldFullPath);
+            Win32Program newitem = Win32Program.GetAppFromPath(newFullPath);
 
             win32ProgramRepository.Add(olditem);
 
             // Act
             _fileSystemMocks[0].Raise(m => m.Renamed += null, e);
+
+            // We need to wait more than one second to make sure our test can pass
+            await Task.Delay(2 * Win32ProgramRepository.OnRenamedEventWaitTime).ConfigureAwait(false);
 
             // Assert
             Assert.AreEqual(1, win32ProgramRepository.Count());

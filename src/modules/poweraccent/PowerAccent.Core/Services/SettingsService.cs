@@ -1,27 +1,31 @@
-﻿// Copyright (c) Microsoft Corporation
+// Copyright (c) Microsoft Corporation
 // The Microsoft Corporation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-namespace PowerAccent.Core.Services;
+using System.IO.Abstractions;
+using System.Text.Json;
 
+using ManagedCommon;
 using Microsoft.PowerToys.Settings.UI.Library;
 using Microsoft.PowerToys.Settings.UI.Library.Enumerations;
 using Microsoft.PowerToys.Settings.UI.Library.Utilities;
+using PowerAccent.Core.SerializationContext;
 using PowerToys.PowerAccentKeyboardService;
-using System.IO.Abstractions;
-using System.Text.Json;
+using Language = global::PowerAccent.Common.Language;
+
+namespace PowerAccent.Core.Services;
 
 public class SettingsService
 {
     private const string PowerAccentModuleName = "QuickAccent";
-    private readonly ISettingsUtils _settingsUtils;
+    private readonly SettingsUtils _settingsUtils;
     private readonly IFileSystemWatcher _watcher;
-    private readonly object _loadingSettingsLock = new object();
+    private readonly Lock _loadingSettingsLock = new Lock();
     private KeyboardListener _keyboardListener;
 
     public SettingsService(KeyboardListener keyboardListener)
     {
-        _settingsUtils = new SettingsUtils();
+        _settingsUtils = SettingsUtils.Default;
         _keyboardListener = keyboardListener;
         ReadSettings();
         _watcher = Helper.GetFileWatcher(PowerAccentModuleName, "settings.json", () => { ReadSettings(); });
@@ -39,27 +43,50 @@ public class SettingsService
                     {
                         Logger.LogInfo("QuickAccent settings.json was missing, creating a new one");
                         var defaultSettings = new PowerAccentSettings();
-                        var options = new JsonSerializerOptions
-                        {
-                            WriteIndented = true,
-                        };
 
-                        _settingsUtils.SaveSettings(JsonSerializer.Serialize(this, options), PowerAccentModuleName);
+                        _settingsUtils.SaveSettings(JsonSerializer.Serialize(this, SourceGenerationContext.Default.SettingsService), PowerAccentModuleName);
                     }
 
                     var settings = _settingsUtils.GetSettingsOrDefault<PowerAccentSettings>(PowerAccentModuleName);
                     if (settings != null)
                     {
                         ActivationKey = settings.Properties.ActivationKey;
-                        _keyboardListener.UpdateActivationKey((int)ActivationKey);
-
                         InputTime = settings.Properties.InputTime.Value;
-                        _keyboardListener.UpdateInputTime(InputTime);
+                        HoldDuration = settings.Properties.HoldDuration.Value;
+                        _keyboardListener.UpdateActivationSettings((int)ActivationKey, InputTime, HoldDuration);
+
+                        DoNotActivateOnGameMode = settings.Properties.DoNotActivateOnGameMode;
+                        _keyboardListener.UpdateDoNotActivateOnGameMode(DoNotActivateOnGameMode);
 
                         ExcludedApps = settings.Properties.ExcludedApps.Value;
                         _keyboardListener.UpdateExcludedApps(ExcludedApps);
 
-                        SelectedLang = Enum.TryParse(settings.Properties.SelectedLang.Value, out Language selectedLangValue) ? selectedLangValue : Language.ALL;
+                        var selectedLangEntries = settings.Properties.SelectedLang.Value
+                            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                            .Select(lang => lang.Trim())
+                            .ToArray();
+
+                        // Either select all languages if "ALL" is specified, or parse
+                        // the specified languages while ignoring unrecognized values.
+                        bool isAllSelected = selectedLangEntries.Any(lang =>
+                            lang.Equals("ALL", StringComparison.OrdinalIgnoreCase));
+                        SelectedLang = isAllSelected
+                            ? Enum.GetValues<Language>()
+                            : selectedLangEntries
+                                .Select(lang =>
+                                {
+                                    if (Enum.TryParse(lang, ignoreCase: true, out Language parsedLang))
+                                    {
+                                        return (Language?)parsedLang;
+                                    }
+
+                                    // Skip unrecognized values.
+                                    Logger.LogWarning($"Unknown language value '{lang}' in settings, skipping.");
+                                    return null;
+                                })
+                                .Where(lang => lang.HasValue)
+                                .Select(lang => lang!.Value)
+                                .ToArray();
 
                         switch (settings.Properties.ToolbarPosition.Value)
                         {
@@ -91,6 +118,13 @@ public class SettingsService
                                 Position = Position.Center;
                                 break;
                         }
+
+                        ShowUnicodeDescription = settings.Properties.ShowUnicodeDescription;
+                        SortByUsageFrequency = settings.Properties.SortByUsageFrequency;
+                        StartSelectionFromTheLeft = settings.Properties.StartSelectionFromTheLeft;
+
+                        Logger.LogInfo(
+                            $"Languages selected: {(isAllSelected ? "ALL" : string.Join(", ", SelectedLang))}");
                     }
                 }
                 catch (Exception ex)
@@ -116,6 +150,21 @@ public class SettingsService
         }
     }
 
+    private bool _doNotActivateOnGameMode = true;
+
+    public bool DoNotActivateOnGameMode
+    {
+        get
+        {
+            return _doNotActivateOnGameMode;
+        }
+
+        set
+        {
+            _doNotActivateOnGameMode = value;
+        }
+    }
+
     private Position _position = Position.Top;
 
     public Position Position
@@ -131,7 +180,7 @@ public class SettingsService
         }
     }
 
-    private int _inputTime = 200;
+    private int _inputTime = PowerAccentSettings.DefaultInputTimeMs;
 
     public int InputTime
     {
@@ -145,6 +194,8 @@ public class SettingsService
             _inputTime = value;
         }
     }
+
+    public int HoldDuration { get; set; } = PowerAccentSettings.DefaultHoldDurationMs;
 
     private string _excludedApps;
 
@@ -161,9 +212,9 @@ public class SettingsService
         }
     }
 
-    private Language _selectedLang;
+    private Language[] _selectedLang;
 
-    public Language SelectedLang
+    public Language[] SelectedLang
     {
         get
         {
@@ -173,6 +224,51 @@ public class SettingsService
         set
         {
             _selectedLang = value;
+        }
+    }
+
+    private bool _showUnicodeDescription;
+
+    public bool ShowUnicodeDescription
+    {
+        get
+        {
+            return _showUnicodeDescription;
+        }
+
+        set
+        {
+            _showUnicodeDescription = value;
+        }
+    }
+
+    private bool _sortByUsageFrequency;
+
+    public bool SortByUsageFrequency
+    {
+        get
+        {
+            return _sortByUsageFrequency;
+        }
+
+        set
+        {
+            _sortByUsageFrequency = value;
+        }
+    }
+
+    private bool _startSelectionFromTheLeft;
+
+    public bool StartSelectionFromTheLeft
+    {
+        get
+        {
+            return _startSelectionFromTheLeft;
+        }
+
+        set
+        {
+            _startSelectionFromTheLeft = value;
         }
     }
 }

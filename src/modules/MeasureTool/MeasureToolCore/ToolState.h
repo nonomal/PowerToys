@@ -11,6 +11,7 @@
 #include <d2d1helper.h>
 #include <dCommon.h>
 
+#include <common/Display/dpi_aware.h>
 #include <common/Display/monitors.h>
 #include <common/utils/serialized.h>
 
@@ -31,9 +32,30 @@ struct CommonState
 
     Measurement::Unit units = Measurement::Unit::Pixel;
 
-    mutable Serialized<OverlayBoxText> overlayBoxText;
-    POINT cursorPosSystemSpace = {}; // updated atomically
+    #pragma warning(push)
+    #pragma warning(disable : 4324)
+    alignas(8) POINT cursorPosSystemSpace = {}; // updated atomically
+    #pragma warning(pop)
+
     std::atomic_bool closeOnOtherMonitors = false;
+
+    float GetPhysicalPx2MmRatio(HWND window) const
+    {
+        auto ratio = -1.0f;
+        auto size = MonitorInfo::GetFromWindow(window).GetSize();
+        if (size.width_physical > 0u)
+        {
+            ratio = size.width_mm / static_cast<float>(size.width_physical);
+        }
+        return ratio;
+    }
+
+    float GetScreenDpi(HWND window) const
+    {
+        unsigned int dpi = DPIAware::DEFAULT_DPI;
+        DPIAware::GetScreenDPIForWindow(window, dpi);
+        return static_cast<float>(dpi);
+    }
 };
 
 struct CursorDrag
@@ -77,9 +99,13 @@ struct MeasureToolState
 
     struct PerScreen
     {
+        using PrevMeasurement = std::pair<POINT, Measurement>;
+
         bool cursorInLeftScreenHalf = false;
         bool cursorInTopScreenHalf = false;
         std::optional<Measurement> measuredEdges;
+        std::vector<PrevMeasurement> prevMeasurements;
+
         // While not in a continuous capturing mode, we need to draw captured backgrounds. These are passed
         // directly from a capturing thread.
         const MappedTextureView* capturedScreenTexture = nullptr;

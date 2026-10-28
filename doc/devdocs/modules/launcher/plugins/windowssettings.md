@@ -62,6 +62,7 @@ A full entry for the `WindowsSettings.json` looks like:
 * The strings for `Name`, `AltNames`, `Areas`, `Type` and `Note` must not contain whitespace(s) or special characters (#, €, $, etc.)
 * The strings for `Name`, `AltNames`, `Areas`, `Type` and `Note` are used as ids for the resource file under `Properties\Resources.resx`
 * When you add new strings make sure you have added all translations for it.
+* If a result has `mmc.exe` as command and the note property is filled, the note is shown in the sub title too. (This is for special MMC results where we don't have a .msc file.)
 
 ## Scores
 
@@ -74,7 +75,7 @@ There are three different score types with different start values.
 | Medium score       |  5000        |
 | Low score          |  1000        |
 
-Each score will decreased by one when a condition match.
+Each score will be decreased by one when a condition match.
 
 | Priority | Condition                                                         | Score type   |
 | -------- | ----------------------------------------------------------------- | ------------ |
@@ -133,7 +134,7 @@ The plugin use only these interfaces (all inside the `Main.cs`):
 | `plugin.json`                         | All meta-data for this plugin                                           |
 
 1. We need this extra wrapper class to make it possible that the JSON file can have and use a JSON schema file.
-Because the JSON file must have a object as root type, instead of a array.
+Because the JSON file must have an object as root type, instead of an array.
 
 ### Important project values (*.csproj)
 

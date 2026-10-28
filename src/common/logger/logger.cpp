@@ -48,28 +48,31 @@ std::shared_ptr<spdlog::logger> Logger::logger = spdlog::null_logger_mt("null");
 
 bool Logger::wasLogFailedShown()
 {
-    wchar_t* pValue;
-    size_t len;
-    _wdupenv_s(&pValue, &len, logFailedShown.c_str());
-    delete[] pValue;
-    return len;
+    // init() sets the flag with SetEnvironmentVariable, which the CRT's copy of the environment doesn't see.
+    return GetEnvironmentVariableW(logFailedShown.c_str(), nullptr, 0) != 0;
 }
 
 void Logger::init(std::string loggerName, std::wstring logFilePath, std::wstring_view logSettingsPath)
 {
     auto logLevel = getLogLevel(logSettingsPath);
+    bool newLoggerCreated = false;
     try
     {
-        auto sink = make_shared<daily_file_sink_mt>(logFilePath, 0, 0, false, LogSettings::retention);
-        if (IsDebuggerPresent())
+        logger = spdlog::get(loggerName);
+        if (logger == nullptr)
         {
-            auto msvc_sink = make_shared<msvc_sink_mt>();
-            msvc_sink->set_pattern("[%Y-%m-%d %H:%M:%S.%f] [%n] [t-%t] [%l] %v");
-            logger = make_shared<spdlog::logger>(loggerName, sinks_init_list{ sink, msvc_sink });
-        }
-        else
-        {
-            logger = make_shared<spdlog::logger>(loggerName, sink);
+            auto sink = make_shared<daily_file_sink_mt>(logFilePath, 0, 0, false, LogSettings::retention);
+            if (IsDebuggerPresent())
+            {
+                auto msvc_sink = make_shared<msvc_sink_mt>();
+                msvc_sink->set_pattern("[%Y-%m-%d %H:%M:%S.%f] [%n] [t-%t] [%l] %v");
+                logger = make_shared<spdlog::logger>(loggerName, sinks_init_list{ sink, msvc_sink });
+            }
+            else
+            {
+                logger = make_shared<spdlog::logger>(loggerName, sink);
+            }
+            newLoggerCreated = true;
         }
     }
     catch (...)
@@ -79,7 +82,7 @@ void Logger::init(std::string loggerName, std::wstring logFilePath, std::wstring
         {
             // todo: that message should be shown from init caller and strings should be localized
             MessageBoxW(NULL,
-                        L"Logger can not be initialized",
+                        L"Logger cannot be initialized",
                         L"PowerToys",
                         MB_OK | MB_ICONERROR);
 
@@ -89,10 +92,14 @@ void Logger::init(std::string loggerName, std::wstring logFilePath, std::wstring
         return;
     }
 
-    logger->set_level(logLevel);
-    logger->set_pattern("[%Y-%m-%d %H:%M:%S.%f] [p-%P] [t-%t] [%l] %v");
-    spdlog::register_logger(logger);
-    spdlog::flush_every(std::chrono::seconds(3));
+    if (newLoggerCreated)
+    {
+        logger->set_level(logLevel);
+        logger->set_pattern("[%Y-%m-%d %H:%M:%S.%f] [p-%P] [t-%t] [%l] %v");
+        logger->flush_on(logLevel); // Auto flush on every log message.
+        spdlog::register_logger(logger);
+    }
+
     logger->info("{} logger is initialized", loggerName);
 }
 

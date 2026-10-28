@@ -3,6 +3,8 @@
 // See the LICENSE file in the project root for more information.
 
 using System;
+
+using ManagedCommon;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Animation;
@@ -23,12 +25,6 @@ namespace Microsoft.PowerToys.Settings.UI.Services
         {
             get
             {
-                if (frame == null)
-                {
-                    frame = Window.Current.Content as Frame;
-                    RegisterFrameEvents();
-                }
-
                 return frame;
             }
 
@@ -62,13 +58,21 @@ namespace Microsoft.PowerToys.Settings.UI.Services
             // Don't open the same page multiple times
             if (Frame.Content?.GetType() != pageType || (parameter != null && !parameter.Equals(lastParamUsed)))
             {
-                var navigationResult = Frame.Navigate(pageType, parameter, infoOverride);
-                if (navigationResult)
+                try
                 {
-                    lastParamUsed = parameter;
-                }
+                    var navigationResult = Frame.Navigate(pageType, parameter, infoOverride);
+                    if (navigationResult)
+                    {
+                        lastParamUsed = parameter;
+                    }
 
-                return navigationResult;
+                    return navigationResult;
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError($"Navigation to {pageType?.Name} failed with exception", ex);
+                    return false;
+                }
             }
             else
             {
@@ -101,5 +105,20 @@ namespace Microsoft.PowerToys.Settings.UI.Services
         private static void Frame_NavigationFailed(object sender, NavigationFailedEventArgs e) => NavigationFailed?.Invoke(sender, e);
 
         private static void Frame_Navigated(object sender, NavigationEventArgs e) => Navigated?.Invoke(sender, e);
+
+        internal static void EnsurePageIsSelected(Type pageType)
+        {
+            if (Frame.Content == null)
+            {
+                try
+                {
+                    Frame.Navigate(pageType);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError($"EnsurePageIsSelected failed for {pageType?.Name}", ex);
+                }
+            }
+        }
     }
 }

@@ -8,8 +8,9 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
-using System.Windows.Media;
+
 using ColorPicker.Models;
+using Windows.UI;
 
 namespace ColorPicker.Helpers
 {
@@ -21,6 +22,9 @@ namespace ColorPicker.Helpers
 
     internal static class SerializationHelper
     {
+        public static readonly JsonSerializerOptions DefaultOptions = new JsonSerializerOptions { WriteIndented = false };
+        public static readonly JsonSerializerOptions IndentedOptions = new JsonSerializerOptions { WriteIndented = true };
+
         public static Dictionary<string, Dictionary<string, string>> ConvertToDesiredColorFormats(
             IList colorsToExport,
             IEnumerable<ColorFormatModel> colorRepresentations,
@@ -38,7 +42,7 @@ namespace ColorPicker.Helpers
                             var tmp = new Dictionary<string, string>();
                             foreach (var colorFormatModel in colorFormatModels)
                             {
-                                var colorInSpecificFormat = colorFormatModel.Convert(color);
+                                var colorInSpecificFormat = colorFormatModel.GetColorText(color);
                                 if (colorFormatModel.FormatName == "HEX")
                                 {
                                     colorInSpecificFormat = "#" + colorInSpecificFormat;
@@ -65,7 +69,7 @@ namespace ColorPicker.Helpers
                             i = 1;
                             foreach (Color color in (IList)colorsToExport)
                             {
-                                var colorInSpecificFormat = colorFormatModel.Convert(color);
+                                var colorInSpecificFormat = colorFormatModel.GetColorText(color);
                                 if (colorFormatModel.FormatName == "HEX")
                                 {
                                     colorInSpecificFormat = "#" + colorInSpecificFormat;
@@ -116,12 +120,19 @@ namespace ColorPicker.Helpers
 
         public static string ToJson(this Dictionary<string, Dictionary<string, string>> source, bool indented = true)
         {
-            var options = new JsonSerializerOptions
-            {
-                WriteIndented = indented,
-            };
+            var options = indented ? IndentedOptions : DefaultOptions;
 
             return JsonSerializer.Serialize(source, options);
+        }
+
+        internal static string ToFileContent(this Dictionary<string, Dictionary<string, string>> source, string extension)
+        {
+            return extension.ToUpperInvariant() switch
+            {
+                ".TXT" => source.ToTxt(';'),
+                ".JSON" => source.ToJson(),
+                _ => throw new InvalidOperationException($"Unsupported export file extension: {extension}"),
+            };
         }
     }
 }

@@ -7,6 +7,8 @@
 #include <shobjidl_core.h>
 #include <string>
 
+#include <common/telemetry/EtwTrace/EtwTrace.h>
+#include <common/utils/context_menu_lifecycle.h>
 #include <common/utils/elevation.h>
 #include <common/utils/process_path.h>
 #include <common/utils/resources.h>
@@ -20,6 +22,20 @@
 using namespace Microsoft::WRL;
 
 HINSTANCE g_hInst = 0;
+Shared::Trace::ETWTrace trace(L"ImageResizerContextMenu");
+
+namespace
+{
+    void ensure_servicing_window()
+    {
+        context_menu_lifecycle::ensure_servicing_window(
+            &g_hInst,
+            L"Microsoft.PowerToys.ImageResizerContextMenu_",
+            L"PowerToys.ImageResizerContextMenu.ServicingWindow",
+            5000,
+            Trace::ServicingWindowInitialization);
+    }
+}
 
 #define BUFSIZE 4096 * 4
 
@@ -51,16 +67,13 @@ public:
     // IExplorerCommand
     IFACEMETHODIMP GetTitle(_In_opt_ IShellItemArray* items, _Outptr_result_nullonfailure_ PWSTR* name)
     {
-        wchar_t strResizePictures[64] = { 0 };
-        LoadString(g_hInst, IDS_RESIZE_PICTURES_TITLE, strResizePictures, ARRAYSIZE(strResizePictures));
-
-        return SHStrDup(strResizePictures, name);
+        return SHStrDup(context_menu_caption.c_str(), name);
     }
 
     IFACEMETHODIMP GetIcon(_In_opt_ IShellItemArray*, _Outptr_result_nullonfailure_ PWSTR* icon)
     {
         std::wstring iconResourcePath = get_module_folderpath(g_hInst);
-        iconResourcePath += L"\\";
+        iconResourcePath += L"\\Assets\\ImageResizer\\";
         iconResourcePath += L"ImageResizer.ico";
         return SHStrDup(iconResourcePath.c_str(), icon);
     }
@@ -79,6 +92,12 @@ public:
 
     IFACEMETHODIMP GetState(_In_opt_ IShellItemArray* selection, _In_ BOOL okToBeSlow, _Out_ EXPCMDSTATE* cmdState)
     {
+        if (nullptr == selection) {
+            // We've observed that it's possible that a null gets passed instead of an empty array. Just don't show the context menu in this case.
+            *cmdState = ECS_HIDDEN;
+            return S_OK;
+        }
+
         if (!CSettingsInstance().GetEnabled())
         {
             *cmdState = ECS_HIDDEN;
@@ -90,13 +109,30 @@ public:
 #pragma warning(suppress : 26812)
         PERCEIVED type;
         PERCEIVEDFLAG flag;
-        IShellItem* shellItem;
+        IShellItem* shellItem=nullptr;
         //Check extension of first item in the list (the item which is right-clicked on)
-        selection->GetItemAt(0, &shellItem);
+        HRESULT getItemResult  = selection->GetItemAt(0, &shellItem);
+        if (S_OK != getItemResult || nullptr == shellItem) {
+            // Some safeguards to avoid runtime errors.
+            *cmdState = ECS_HIDDEN;
+            return S_OK;
+        }
         LPTSTR pszPath;
         // Retrieves the entire file system path of the file from its shell item
-        shellItem->GetDisplayName(SIGDN_FILESYSPATH, &pszPath);
+        HRESULT getDisplayResult = shellItem->GetDisplayName(SIGDN_FILESYSPATH, &pszPath);
+        if (S_OK != getDisplayResult || nullptr == pszPath)
+        {
+            // Avoid crashes in the following code.
+            return E_FAIL;
+        }
+
         LPTSTR pszExt = PathFindExtension(pszPath);
+        if (nullptr == pszExt)
+        {
+            CoTaskMemFree(pszPath);
+            // Avoid crashes in the following code.
+            return E_FAIL;
+        }
 
         // TODO: Instead, detect whether there's a WIC codec installed that can handle this file
         AssocGetPerceivedType(pszExt, &type, &flag, NULL);
@@ -114,6 +150,13 @@ public:
     IFACEMETHODIMP Invoke(_In_opt_ IShellItemArray* selection, _In_opt_ IBindCtx*) noexcept
     try
     {
+        context_menu_lifecycle::activity_guard activity;
+        if (!activity)
+        {
+            return HRESULT_FROM_WIN32(ERROR_SHUTDOWN_IN_PROGRESS);
+        }
+
+        trace.UpdateState(true);
 
         Trace::Invoked();
         HRESULT hr = S_OK;
@@ -124,6 +167,9 @@ public:
         }
 
         Trace::InvokedRet(hr);
+
+        trace.UpdateState(false);
+        trace.Flush();
 
         return hr;
     }
@@ -202,18 +248,18 @@ private:
         if (UuidCreate(&temp_uuid) == RPC_S_UUID_NO_ADDRESS)
         {
             auto val = get_last_error_message(GetLastError());
-            Logger::warn(L"UuidCreate can not create guid. {}", val.has_value() ? val.value() : L"");
+            Logger::warn(L"UuidCreate cannot create guid. {}", val.has_value() ? val.value() : L"");
         }
-        else if (UuidToString(&temp_uuid, (RPC_WSTR*)&uuid_chars) != RPC_S_OK)
+        else if (UuidToString(&temp_uuid, reinterpret_cast<RPC_WSTR*>(& uuid_chars)) != RPC_S_OK)
         {
             auto val = get_last_error_message(GetLastError());
-            Logger::warn(L"UuidToString can not convert to string. {}", val.has_value() ? val.value() : L"");
+            Logger::warn(L"UuidToString cannot convert to string. {}", val.has_value() ? val.value() : L"");
         }
 
         if (uuid_chars != nullptr)
         {
             pipe_name += std::wstring(uuid_chars);
-            RpcStringFree((RPC_WSTR*)&uuid_chars);
+            RpcStringFree(reinterpret_cast<RPC_WSTR*>(&uuid_chars));
             uuid_chars = nullptr;
         }
         create_pipe_thread = std::thread(&ImageResizerContextMenuCommand::StartNamedPipeServerAndSendData, this, pipe_name);
@@ -232,14 +278,20 @@ private:
             for (DWORD i = 0; i < fileCount; i++)
             {
                 IShellItem* shellItem;
-                psiItemArray->GetItemAt(i, &shellItem);
-                LPWSTR itemName;
-                // Retrieves the entire file system path of the file from its shell item
-                shellItem->GetDisplayName(SIGDN_FILESYSPATH, &itemName);
-                CString fileName(itemName);
-                fileName.Append(_T("\r\n"));
-                // Write the file path into the input stream for image resizer
-                writePipe.Write(fileName, fileName.GetLength() * sizeof(TCHAR));
+                HRESULT getItemAtResult = psiItemArray->GetItemAt(i, &shellItem);
+                if (SUCCEEDED(getItemAtResult))
+                {
+                    LPWSTR itemName;
+                    // Retrieves the entire file system path of the file from its shell item
+                    HRESULT getDisplayResult = shellItem->GetDisplayName(SIGDN_FILESYSPATH, &itemName);
+                    if (SUCCEEDED(getDisplayResult))
+                    {
+                        CString fileName(itemName);
+                        fileName.Append(_T("\r\n"));
+                        // Write the file path into the input stream for image resizer
+                        writePipe.Write(fileName, fileName.GetLength() * sizeof(TCHAR));
+                    }
+                }
             }
             writePipe.Close();
         }
@@ -249,7 +301,7 @@ private:
 
     std::thread create_pipe_thread;
     HANDLE hPipe = INVALID_HANDLE_VALUE;
-    std::wstring app_name = L"ImageResizer";
+    std::wstring context_menu_caption = GET_RESOURCE_STRING_FALLBACK(IDS_IMAGERESIZER_CONTEXT_MENU_ENTRY, L"Resize with Image Resizer");
 };
 
 CoCreatableClass(ImageResizerContextMenuCommand)
@@ -258,6 +310,7 @@ CoCreatableClassWrlCreatorMapInclude(ImageResizerContextMenuCommand)
 
 STDAPI DllGetActivationFactory(_In_ HSTRING activatableClassId, _COM_Outptr_ IActivationFactory** factory)
 {
+    ensure_servicing_window();
     return Module<ModuleType::InProc>::GetModule().GetActivationFactory(activatableClassId, factory);
 }
 
@@ -268,5 +321,6 @@ STDAPI DllCanUnloadNow()
 
 STDAPI DllGetClassObject(_In_ REFCLSID rclsid, _In_ REFIID riid, _COM_Outptr_ void** instance)
 {
+    ensure_servicing_window();
     return Module<InProc>::GetModule().GetClassObject(rclsid, riid, instance);
 }

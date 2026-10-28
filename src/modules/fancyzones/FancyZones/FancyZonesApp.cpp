@@ -5,6 +5,7 @@
 #include <common/utils/logger_helper.h>
 #include <common/utils/resources.h>
 #include <common/utils/UnhandledExceptionHandler.h>
+#include <common/interop/shared_constants.h>
 
 #include <FancyZonesLib/Generated Files/resource.h>
 #include <FancyZonesLib/FancyZonesData.h>
@@ -19,6 +20,14 @@ FancyZonesApp::FancyZonesApp(const std::wstring& appName, const std::wstring& ap
         
     InitializeWinhookEventIds();
     m_app = MakeFancyZones(reinterpret_cast<HINSTANCE>(&__ImageBase), std::bind(&FancyZonesApp::DisableModule, this));
+
+    m_mainThreadId = GetCurrentThreadId();
+    m_exitEventWaiter.start(CommonSharedConstants::FZE_EXIT_EVENT, [&](DWORD err) {
+        if (err == ERROR_SUCCESS)
+        {
+            DisableModule();
+        }
+    });
 
     InitHooks();
 
@@ -84,13 +93,14 @@ void FancyZonesApp::InitHooks()
         }
     }
 
-    std::array<DWORD, 6> events_to_subscribe = {
+    std::array<DWORD, 7> events_to_subscribe = {
         EVENT_SYSTEM_MOVESIZESTART,
         EVENT_SYSTEM_MOVESIZEEND,
         EVENT_OBJECT_NAMECHANGE,
         EVENT_OBJECT_UNCLOAKED,
         EVENT_OBJECT_SHOW,
-        EVENT_OBJECT_CREATE
+        EVENT_OBJECT_CREATE,
+        EVENT_OBJECT_DESTROY
     };
     for (const auto event : events_to_subscribe)
     {
@@ -111,7 +121,7 @@ void FancyZonesApp::InitHooks()
 
 void FancyZonesApp::DisableModule() noexcept
 {
-    PostQuitMessage(0);
+    PostThreadMessage(m_mainThreadId, WM_QUIT, 0, 0);
 }
 
 void FancyZonesApp::HandleWinHookEvent(WinHookEvent* data) noexcept
@@ -165,6 +175,7 @@ void FancyZonesApp::HandleWinHookEvent(WinHookEvent* data) noexcept
     case EVENT_OBJECT_UNCLOAKED:
     case EVENT_OBJECT_SHOW:
     case EVENT_OBJECT_CREATE:
+    case EVENT_OBJECT_DESTROY:
     {
         fzCallback->HandleWinHookEvent(data);
     }
@@ -177,5 +188,11 @@ void FancyZonesApp::HandleWinHookEvent(WinHookEvent* data) noexcept
 
 intptr_t FancyZonesApp::HandleKeyboardHookEvent(LowlevelKeyboardEvent* data) noexcept
 {
-    return m_app.as<IFancyZonesCallback>()->OnKeyDown(data->lParam);
+    auto fzCallback = m_app.as<IFancyZonesCallback>();
+    if (data->wParam == WM_KEYUP || data->wParam == WM_SYSKEYUP)
+    {
+        return fzCallback->OnKeyUp(data->lParam);
+    }
+
+    return fzCallback->OnKeyDown(data->lParam);
 }

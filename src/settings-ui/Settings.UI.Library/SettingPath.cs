@@ -5,9 +5,11 @@
 using System;
 using System.IO.Abstractions;
 
+using Microsoft.PowerToys.Settings.UI.Library.Utilities;
+
 namespace Microsoft.PowerToys.Settings.UI.Library
 {
-    public class SettingPath : ISettingsPath
+    public class SettingPath
     {
         private const string DefaultFileName = "settings.json";
 
@@ -21,24 +23,24 @@ namespace Microsoft.PowerToys.Settings.UI.Library
             _path = path ?? throw new ArgumentNullException(nameof(path));
         }
 
+        public SettingPath()
+            : this(new FileSystem().Directory, new FileSystem().Path)
+        {
+        }
+
         public bool SettingsFolderExists(string powertoy)
         {
-            return _directory.Exists(System.IO.Path.Combine(LocalApplicationDataFolder(), $"Microsoft\\PowerToys\\{powertoy}"));
+            return _directory.Exists(System.IO.Path.Combine(Helper.LocalApplicationDataFolder(), $"Microsoft\\PowerToys\\{powertoy}"));
         }
 
         public void CreateSettingsFolder(string powertoy)
         {
-            _directory.CreateDirectory(System.IO.Path.Combine(LocalApplicationDataFolder(), $"Microsoft\\PowerToys\\{powertoy}"));
+            _directory.CreateDirectory(System.IO.Path.Combine(Helper.LocalApplicationDataFolder(), $"Microsoft\\PowerToys\\{powertoy}"));
         }
 
         public void DeleteSettings(string powertoy = "")
         {
-            _directory.Delete(System.IO.Path.Combine(LocalApplicationDataFolder(), $"Microsoft\\PowerToys\\{powertoy}"));
-        }
-
-        private static string LocalApplicationDataFolder()
-        {
-            return Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            _directory.Delete(System.IO.Path.Combine(Helper.LocalApplicationDataFolder(), $"Microsoft\\PowerToys\\{powertoy}"));
         }
 
         /// <summary>
@@ -50,12 +52,12 @@ namespace Microsoft.PowerToys.Settings.UI.Library
             if (string.IsNullOrWhiteSpace(powertoy))
             {
                 return _path.Combine(
-                    LocalApplicationDataFolder(),
+                    Helper.LocalApplicationDataFolder(),
                     $"Microsoft\\PowerToys\\{fileName}");
             }
 
             return _path.Combine(
-                LocalApplicationDataFolder(),
+                Helper.LocalApplicationDataFolder(),
                 $"Microsoft\\PowerToys\\{powertoy}\\{fileName}");
         }
     }

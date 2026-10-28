@@ -40,13 +40,14 @@ json::JsonObject PowertoyModule::json_config() const
 }
 
 PowertoyModule::PowertoyModule(PowertoyModuleIface* pt_module, HMODULE handle) :
-    handle(handle), pt_module(pt_module)
+    handle(handle), pt_module(pt_module), hkmng(HotkeyConflictDetector::HotkeyConflictManager::GetInstance())
 {
     if (!pt_module)
     {
         throw std::runtime_error("Module not initialized");
     }
 
+    remove_hotkey_records();
     update_hotkeys();
     UpdateHotkeyEx();
 }
@@ -63,25 +64,37 @@ void PowertoyModule::update_hotkeys()
 
     for (size_t i = 0; i < hotkeyCount; i++)
     {
-        CentralizedKeyboardHook::SetHotkeyAction(pt_module->get_key(), hotkeys[i], [modulePtr, i] {
-            Logger::trace(L"{} hotkey is invoked from Centralized keyboard hook", modulePtr->get_key());
-            return modulePtr->on_hotkey(i);
-        });
+        if (hotkeys[i].isShown)
+        {
+            hkmng.AddHotkey(hotkeys[i], pt_module->get_key(), static_cast<int>(i), pt_module->is_enabled());
+
+            CentralizedKeyboardHook::SetHotkeyAction(pt_module->get_key(), hotkeys[i], [modulePtr, i] {
+                Logger::trace(L"{} hotkey is invoked from Centralized keyboard hook", modulePtr->get_key());
+                return modulePtr->on_hotkey(i);
+            });
+        }
     }
 }
 
 void PowertoyModule::UpdateHotkeyEx()
 {
     CentralizedHotkeys::UnregisterHotkeysForModule(pt_module->get_key());
+    CentralizedKeyboardHook::ClearPressedKeyActions(pt_module->get_key());
+
     auto container = pt_module->GetHotkeyEx();
     if (container.has_value() && pt_module->is_enabled())
     {
+        hkmng.RemoveHotkeyByModule(pt_module->get_key());
+
         auto hotkey = container.value();
         auto modulePtr = pt_module.get();
         auto action = [modulePtr](WORD /*modifiersMask*/, WORD /*vkCode*/) {
             Logger::trace(L"{} hotkey Ex is invoked from Centralized keyboard hook", modulePtr->get_key());
             modulePtr->OnHotkeyEx();
         };
+
+        HotkeyConflictDetector::Hotkey _hotkey = HotkeyConflictDetector::ShortcutToHotkey({ hotkey.modifiersMask, hotkey.vkCode });
+        hkmng.AddHotkey(_hotkey, pt_module->get_key(), 0, pt_module->is_enabled()); // This is the only one activation hotkey, so we use "0" as the name.
 
         CentralizedHotkeys::AddHotkeyAction({ hotkey.modifiersMask, hotkey.vkCode }, { pt_module->get_key(), action });
     }
@@ -90,11 +103,15 @@ void PowertoyModule::UpdateHotkeyEx()
     // Just for enabling the shortcut guide legacy behavior of pressing the Windows Key.
     // This is not the sort of behavior we'd like to have generalized on other modules.
     // But this was a way to bring back the long windows key behavior that the community wanted back while maintaining the separate process.
-    if (pt_module->keep_track_of_pressed_win_key())
+    if (pt_module->is_enabled() && pt_module->keep_track_of_pressed_win_key())
     {
         auto modulePtr = pt_module.get();
         auto action = [modulePtr] {
-            modulePtr->OnHotkeyEx();
+            if (modulePtr->is_enabled())
+            {
+                return modulePtr->on_hotkey(PowertoyModuleIface::WIN_KEY_HOLD_HOTKEY_ID);
+            }
+
             return false;
         };
         CentralizedKeyboardHook::AddPressedKeyAction(pt_module->get_key(), VK_LWIN, pt_module->milliseconds_win_key_must_be_pressed(), action);

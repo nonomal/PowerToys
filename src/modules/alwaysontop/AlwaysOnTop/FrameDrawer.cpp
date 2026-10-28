@@ -14,6 +14,21 @@ namespace
         std::hash<pod_repr_t> hasher{};
         return hasher(*reinterpret_cast<const pod_repr_t*>(&rect));
     }
+
+    bool AreEqual(const D2D1_RECT_F& left, const D2D1_RECT_F& right)
+    {
+        return left.left == right.left &&
+               left.top == right.top &&
+               left.right == right.right &&
+               left.bottom == right.bottom;
+    }
+
+    bool AreEqual(const D2D1_ROUNDED_RECT& left, const D2D1_ROUNDED_RECT& right)
+    {
+        return AreEqual(left.rect, right.rect) &&
+               left.radiusX == right.radiusX &&
+               left.radiusY == right.radiusY;
+    }
 }
 
 std::unique_ptr<FrameDrawer> FrameDrawer::Create(HWND window)
@@ -52,6 +67,7 @@ bool FrameDrawer::CreateRenderTargets(const RECT& clientRect)
     }
 
     m_renderTarget = nullptr;
+    m_borderBrush = nullptr;
 
     const auto hwndRenderTargetProperties = D2D1::HwndRenderTargetProperties(m_window, renderTargetSize, D2D1_PRESENT_OPTIONS_NONE);
 
@@ -62,7 +78,15 @@ bool FrameDrawer::CreateRenderTargets(const RECT& clientRect)
         return false;
     }
 
-    m_renderTarget->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
+    m_renderTarget->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+
+    hr = m_renderTarget->CreateSolidColorBrush(m_sceneRect.borderColor, m_borderBrush.put());
+    if (FAILED(hr))
+    {
+        m_renderTarget = nullptr;
+        return false;
+    }
+
     m_renderTargetSizeHash = rectHash;
 
     return true;
@@ -90,10 +114,10 @@ void FrameDrawer::Show()
     Render();
 }
 
-void FrameDrawer::SetBorderRect(RECT windowRect, COLORREF color, int thickness, float radius)
+void FrameDrawer::SetBorderRect(RECT windowRect, COLORREF rgb, float alpha, int thickness, float radius)
 {
     auto newSceneRect = DrawableRect{
-        .borderColor = ConvertColor(color),
+        .borderColor = ConvertColor(rgb, alpha),
         .thickness = thickness,
     };
 
@@ -108,8 +132,11 @@ void FrameDrawer::SetBorderRect(RECT windowRect, COLORREF color, int thickness, 
     
     const bool colorUpdated = std::memcmp(&m_sceneRect.borderColor, &newSceneRect.borderColor, sizeof(newSceneRect.borderColor));
     const bool thicknessUpdated = m_sceneRect.thickness != newSceneRect.thickness;
-    const bool cornersUpdated = m_sceneRect.rect.has_value() != newSceneRect.rect.has_value() || m_sceneRect.roundedRect.has_value() != newSceneRect.roundedRect.has_value();
-    const bool needsRedraw = colorUpdated || thicknessUpdated || cornersUpdated;
+    const bool rectangleUpdated = m_sceneRect.rect.has_value() != newSceneRect.rect.has_value() ||
+                                  (m_sceneRect.rect && !AreEqual(m_sceneRect.rect.value(), newSceneRect.rect.value()));
+    const bool roundedRectangleUpdated = m_sceneRect.roundedRect.has_value() != newSceneRect.roundedRect.has_value() ||
+                                         (m_sceneRect.roundedRect && !AreEqual(m_sceneRect.roundedRect.value(), newSceneRect.roundedRect.value()));
+    const bool needsRedraw = colorUpdated || thicknessUpdated || rectangleUpdated || roundedRectangleUpdated;
 
     RECT clientRect;
     if (!SUCCEEDED(DwmGetWindowAttribute(m_window, DWMWA_EXTENDED_FRAME_BOUNDS, &clientRect, sizeof(clientRect))))
@@ -142,10 +169,9 @@ void FrameDrawer::SetBorderRect(RECT windowRect, COLORREF color, int thickness, 
 
     if (colorUpdated)
     {
-        m_borderBrush = nullptr;
-        if (m_renderTarget)
+        if (m_borderBrush)
         {
-            m_renderTarget->CreateSolidColorBrush(m_sceneRect.borderColor, m_borderBrush.put());
+            m_borderBrush->SetColor(m_sceneRect.borderColor);
         }
     }
 
@@ -175,12 +201,12 @@ IDWriteFactory* FrameDrawer::GetWriteFactory()
     return pDWriteFactory;
 }
 
-D2D1_COLOR_F FrameDrawer::ConvertColor(COLORREF color)
+D2D1_COLOR_F FrameDrawer::ConvertColor(COLORREF color, float alpha)
 {
     return D2D1::ColorF(GetRValue(color) / 255.f,
                         GetGValue(color) / 255.f,
                         GetBValue(color) / 255.f,
-                        1.f);
+                        alpha);
 }
 
 D2D1_ROUNDED_RECT FrameDrawer::ConvertRect(RECT rect, int thickness, float radius)
@@ -188,10 +214,10 @@ D2D1_ROUNDED_RECT FrameDrawer::ConvertRect(RECT rect, int thickness, float radiu
     float halfThickness = thickness / 2.0f;
 
     // 1 is needed to eliminate the gap between border and window
-    auto d2d1Rect = D2D1::RectF((float)rect.left + halfThickness + 1, 
-        (float)rect.top + halfThickness + 1, 
-        (float)rect.right - halfThickness - 1, 
-        (float)rect.bottom - halfThickness - 1);
+    auto d2d1Rect = D2D1::RectF(static_cast<float>(rect.left) + halfThickness + 1, 
+        static_cast<float>(rect.top) + halfThickness + 1, 
+        static_cast<float>(rect.right) - halfThickness - 1, 
+        static_cast<float>(rect.bottom) - halfThickness - 1);
     return D2D1::RoundedRect(d2d1Rect, radius, radius);
 }
 
@@ -200,10 +226,108 @@ D2D1_RECT_F FrameDrawer::ConvertRect(RECT rect, int thickness)
     float halfThickness = thickness / 2.0f;
 
     // 1 is needed to eliminate the gap between border and window
-    return D2D1::RectF((float)rect.left + halfThickness + 1,
-        (float)rect.top + halfThickness + 1,
-        (float)rect.right - halfThickness - 1,
-        (float)rect.bottom - halfThickness - 1);
+    return D2D1::RectF(static_cast<float>(rect.left) + halfThickness + 1,
+        static_cast<float>(rect.top) + halfThickness + 1,
+        static_cast<float>(rect.right) - halfThickness - 1,
+        static_cast<float>(rect.bottom) - halfThickness - 1);
+}
+
+winrt::com_ptr<ID2D1Geometry> FrameDrawer::CreateBorderGeometry(const DrawableRect& drawableRect)
+{
+    const float halfThickness = drawableRect.thickness / 2.0f;
+    winrt::com_ptr<ID2D1Geometry> outerGeometry;
+    winrt::com_ptr<ID2D1Geometry> innerGeometry;
+
+    if (drawableRect.roundedRect)
+    {
+        const auto& borderRect = drawableRect.roundedRect.value();
+        const auto outerRect = D2D1::RoundedRect(
+            D2D1::RectF(
+                borderRect.rect.left - halfThickness,
+                borderRect.rect.top - halfThickness,
+                borderRect.rect.right + halfThickness,
+                borderRect.rect.bottom + halfThickness),
+            borderRect.radiusX + halfThickness,
+            borderRect.radiusY + halfThickness);
+        const auto innerRect = D2D1::RoundedRect(
+            D2D1::RectF(
+                borderRect.rect.left + halfThickness,
+                borderRect.rect.top + halfThickness,
+                borderRect.rect.right - halfThickness,
+                borderRect.rect.bottom - halfThickness),
+            (std::max)(borderRect.radiusX - halfThickness, 0.0f),
+            (std::max)(borderRect.radiusY - halfThickness, 0.0f));
+
+        winrt::com_ptr<ID2D1RoundedRectangleGeometry> outerRoundedGeometry;
+        if (FAILED(GetD2DFactory()->CreateRoundedRectangleGeometry(outerRect, outerRoundedGeometry.put())))
+        {
+            return nullptr;
+        }
+
+        outerGeometry = outerRoundedGeometry.as<ID2D1Geometry>();
+
+        if (innerRect.rect.left >= innerRect.rect.right || innerRect.rect.top >= innerRect.rect.bottom)
+        {
+            return outerGeometry;
+        }
+
+        winrt::com_ptr<ID2D1RoundedRectangleGeometry> innerRoundedGeometry;
+        if (FAILED(GetD2DFactory()->CreateRoundedRectangleGeometry(innerRect, innerRoundedGeometry.put())))
+        {
+            return nullptr;
+        }
+
+        innerGeometry = innerRoundedGeometry.as<ID2D1Geometry>();
+    }
+    else if (drawableRect.rect)
+    {
+        const auto& borderRect = drawableRect.rect.value();
+        const auto outerRect = D2D1::RectF(
+            borderRect.left - halfThickness,
+            borderRect.top - halfThickness,
+            borderRect.right + halfThickness,
+            borderRect.bottom + halfThickness);
+        const auto innerRect = D2D1::RectF(
+            borderRect.left + halfThickness,
+            borderRect.top + halfThickness,
+            borderRect.right - halfThickness,
+            borderRect.bottom - halfThickness);
+
+        winrt::com_ptr<ID2D1RectangleGeometry> outerRectangleGeometry;
+        if (FAILED(GetD2DFactory()->CreateRectangleGeometry(outerRect, outerRectangleGeometry.put())))
+        {
+            return nullptr;
+        }
+
+        outerGeometry = outerRectangleGeometry.as<ID2D1Geometry>();
+
+        if (innerRect.left >= innerRect.right || innerRect.top >= innerRect.bottom)
+        {
+            return outerGeometry;
+        }
+
+        winrt::com_ptr<ID2D1RectangleGeometry> innerRectangleGeometry;
+        if (FAILED(GetD2DFactory()->CreateRectangleGeometry(innerRect, innerRectangleGeometry.put())))
+        {
+            return nullptr;
+        }
+
+        innerGeometry = innerRectangleGeometry.as<ID2D1Geometry>();
+    }
+
+    if (!outerGeometry || !innerGeometry)
+    {
+        return nullptr;
+    }
+
+    ID2D1Geometry* geometries[] = { outerGeometry.get(), innerGeometry.get() };
+    winrt::com_ptr<ID2D1GeometryGroup> borderGeometry;
+    if (FAILED(GetD2DFactory()->CreateGeometryGroup(D2D1_FILL_MODE_ALTERNATE, geometries, ARRAYSIZE(geometries), borderGeometry.put())))
+    {
+        return nullptr;
+    }
+
+    return borderGeometry.as<ID2D1Geometry>();
 }
 
 void FrameDrawer::Render()
@@ -217,16 +341,20 @@ void FrameDrawer::Render()
 
     m_renderTarget->Clear(D2D1::ColorF(0.f, 0.f, 0.f, 0.f));
 
-    // The border stroke is centered on the line.
+    if (const auto borderGeometry = CreateBorderGeometry(m_sceneRect))
+    {
+        m_renderTarget->FillGeometry(borderGeometry.get(), m_borderBrush.get());
+    }
 
-    if (m_sceneRect.roundedRect)
+    const HRESULT hr = m_renderTarget->EndDraw();
+    if (hr == D2DERR_RECREATE_TARGET)
     {
-        m_renderTarget->DrawRoundedRectangle(m_sceneRect.roundedRect.value(), m_borderBrush.get(), static_cast<float>(m_sceneRect.thickness));
+        m_borderBrush = nullptr;
+        m_renderTarget = nullptr;
+        m_renderTargetSizeHash = {};
     }
-    else if (m_sceneRect.rect)
+    else if (FAILED(hr))
     {
-        m_renderTarget->DrawRectangle(m_sceneRect.rect.value(), m_borderBrush.get(), static_cast<float>(m_sceneRect.thickness));
+        Logger::error(L"Failed to render the border. HRESULT: 0x{:08X}", static_cast<unsigned long>(hr));
     }
-    
-    m_renderTarget->EndDraw();
 }

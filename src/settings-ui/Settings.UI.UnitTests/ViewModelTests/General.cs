@@ -3,12 +3,16 @@
 // See the LICENSE file in the project root for more information.
 
 using System;
+using System.Collections.Generic;
+
 using Microsoft.PowerToys.Settings.UI.Library;
+using Microsoft.PowerToys.Settings.UI.Library.Interfaces;
 using Microsoft.PowerToys.Settings.UI.UnitTests.BackwardsCompatibility;
 using Microsoft.PowerToys.Settings.UI.UnitTests.Mocks;
 using Microsoft.PowerToys.Settings.UI.ViewModels;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Moq;
+
 using JsonSerializer = System.Text.Json.JsonSerializer;
 
 namespace ViewModelTests
@@ -18,12 +22,115 @@ namespace ViewModelTests
     {
         public const string GeneralSettingsFileName = "Test\\GeneralSettings";
 
-        private Mock<ISettingsUtils> mockGeneralSettingsUtils;
+        private Mock<SettingsUtils> mockGeneralSettingsUtils;
 
         [TestInitialize]
         public void SetUpStubSettingUtils()
         {
             mockGeneralSettingsUtils = ISettingsUtilsMocks.GetStubSettingsUtils<GeneralSettings>();
+        }
+
+        private sealed class TestGeneralViewModel : GeneralViewModel
+        {
+            public TestGeneralViewModel(
+                Microsoft.PowerToys.Settings.UI.Library.Interfaces.ISettingsRepository<GeneralSettings> settingsRepository,
+                string runAsAdminText,
+                string runAsUserText,
+                bool isElevated,
+                bool isAdmin,
+                Func<string, int> ipcMSGCallBackFunc,
+                Func<string, int> ipcMSGRestartAsAdminMSGCallBackFunc,
+                Action checkForUpdatesAction,
+                string configFileSubfolder = "")
+                : base(settingsRepository, runAsAdminText, runAsUserText, isElevated, isAdmin, ipcMSGCallBackFunc, ipcMSGRestartAsAdminMSGCallBackFunc, checkForUpdatesAction, configFileSubfolder)
+            {
+            }
+
+            protected override Microsoft.UI.Dispatching.DispatcherQueue GetDispatcherQueue()
+            {
+                return null;
+            }
+        }
+
+        [TestMethod]
+        public void BackupStatusRefreshNotifiesUiWithoutSendingCachedGeneralSettings()
+        {
+            var settings = new GeneralSettings();
+            settings.Enabled.PowerLauncher = true;
+            settings.Enabled.ColorPicker = false;
+            var repository = new Mock<ISettingsRepository<GeneralSettings>>();
+            repository.SetupGet(x => x.SettingsConfig).Returns(settings);
+            var sentMessages = new List<string>();
+            using var viewModel = new TestGeneralViewModel(
+                repository.Object,
+                string.Empty,
+                string.Empty,
+                false,
+                false,
+                msg =>
+                {
+                    sentMessages.Add(msg);
+                    return 0;
+                },
+                _ => 0,
+                () => { });
+            var before = settings.ToJsonString();
+            var notifications = new List<string>();
+            viewModel.PropertyChanged += (_, args) => notifications.Add(args.PropertyName);
+            sentMessages.Clear();
+
+            viewModel.NotifyAllBackupAndRestoreProperties();
+
+            CollectionAssert.AreEquivalent(
+                new[]
+                {
+                    nameof(GeneralViewModel.LastSettingsBackupDate),
+                    nameof(GeneralViewModel.LastSettingsBackupSource),
+                    nameof(GeneralViewModel.LastSettingsBackupFileName),
+                    nameof(GeneralViewModel.CurrentSettingMatchText),
+                    nameof(GeneralViewModel.SettingsBackupMessage),
+                    nameof(GeneralViewModel.BackupRestoreMessageSeverity),
+                    nameof(GeneralViewModel.SettingsBackupRestoreMessageVisible),
+                },
+                notifications);
+            Assert.AreEqual(0, sentMessages.Count);
+            Assert.AreEqual(before, settings.ToJsonString());
+        }
+
+        [TestMethod]
+        public void ReadOnlyStatusChangesDoNotSendCachedGeneralSettings()
+        {
+            var settings = new GeneralSettings();
+            settings.Enabled.PowerLauncher = true;
+            settings.Enabled.ColorPicker = false;
+            var repository = new Mock<ISettingsRepository<GeneralSettings>>();
+            repository.SetupGet(x => x.SettingsConfig).Returns(settings);
+            var sentMessages = new List<string>();
+            using var viewModel = new TestGeneralViewModel(
+                repository.Object,
+                string.Empty,
+                string.Empty,
+                false,
+                false,
+                msg =>
+                {
+                    sentMessages.Add(msg);
+                    return 0;
+                },
+                _ => 0,
+                () => { });
+            var before = settings.ToJsonString();
+            var notifications = new List<string>();
+            viewModel.PropertyChanged += (_, args) => notifications.Add(args.PropertyName);
+            sentMessages.Clear();
+
+            viewModel.IsBugReportRunning = true;
+            viewModel.HideBackupAndRestoreMessageArea();
+
+            CollectionAssert.Contains(notifications, nameof(GeneralViewModel.IsBugReportRunning));
+            CollectionAssert.Contains(notifications, nameof(GeneralViewModel.SettingsBackupRestoreMessageVisible));
+            Assert.AreEqual(0, sentMessages.Count);
+            Assert.AreEqual(before, settings.ToJsonString());
         }
 
         [TestMethod]
@@ -34,7 +141,7 @@ namespace ViewModelTests
         [DataRow("v0.22.0")]
         public void OriginalFilesModificationTest(string version)
         {
-            var settingPathMock = new Mock<ISettingsPath>();
+            var settingPathMock = new Mock<SettingPath>();
             var fileMock = BackCompatTestProperties.GetGeneralSettingsIOProvider(version);
 
             var mockGeneralSettingsUtils = new SettingsUtils(fileMock.Object, settingPathMock.Object);
@@ -46,21 +153,21 @@ namespace ViewModelTests
             // Arrange
             Func<string, int> sendMockIPCConfigMSG = msg => 0;
             Func<string, int> sendRestartAdminIPCMessage = msg => 0;
-            Func<string, int> sendCheckForUpdatesIPCMessage = msg => 0;
-            var viewModel = new GeneralViewModel(
+            Action checkForUpdates = () => { };
+            var viewModel = new TestGeneralViewModel(
                 settingsRepository: generalSettingsRepository,
                 runAsAdminText: "GeneralSettings_RunningAsAdminText",
                 runAsUserText: "GeneralSettings_RunningAsUserText",
                 isElevated: false,
                 isAdmin: false,
-                updateTheme: UpdateUIThemeMethod,
                 ipcMSGCallBackFunc: sendMockIPCConfigMSG,
                 ipcMSGRestartAsAdminMSGCallBackFunc: sendRestartAdminIPCMessage,
-                ipcMSGCheckForUpdatesCallBackFunc: sendCheckForUpdatesIPCMessage,
+                checkForUpdatesAction: checkForUpdates,
                 configFileSubfolder: string.Empty);
 
             // Verify that the old settings persisted
             Assert.AreEqual(originalGeneralSettings.AutoDownloadUpdates, viewModel.AutoDownloadUpdates);
+            Assert.AreEqual(originalGeneralSettings.IncludePrereleaseUpdates, viewModel.IncludePrereleaseUpdates);
             Assert.AreEqual(originalGeneralSettings.PowertoysVersion, viewModel.PowerToysVersion);
             Assert.AreEqual(originalGeneralSettings.RunElevated, viewModel.RunElevated);
             Assert.AreEqual(originalGeneralSettings.Startup, viewModel.Startup);
@@ -71,19 +178,62 @@ namespace ViewModelTests
         }
 
         [TestMethod]
-        public void IsElevatedShouldUpdateRunasAdminStatusAttrsWhenSuccessful()
+        public void IncludePrereleaseUpdatesShouldSendUpdatedSettingWhenSuccessful()
         {
-            // Arrange
-            Func<string, int> sendMockIPCConfigMSG = msg => { return 0; };
+            bool sawExpectedIpcPayload = false;
+            bool updateCheckRequested = false;
+            Func<string, int> sendMockIPCConfigMSG = msg =>
+            {
+                if (string.IsNullOrWhiteSpace(msg))
+                {
+                    return 0;
+                }
+
+                OutGoingGeneralSettings snd = JsonSerializer.Deserialize<OutGoingGeneralSettings>(msg);
+                if (snd?.GeneralSettings is null)
+                {
+                    return 0;
+                }
+
+                Assert.IsTrue(snd.GeneralSettings.IncludePrereleaseUpdates);
+                sawExpectedIpcPayload = true;
+                return 0;
+            };
+
             Func<string, int> sendRestartAdminIPCMessage = msg => { return 0; };
-            Func<string, int> sendCheckForUpdatesIPCMessage = msg => { return 0; };
-            GeneralViewModel viewModel = new GeneralViewModel(
+            Action checkForUpdates = () => updateCheckRequested = true;
+            GeneralViewModel viewModel = new TestGeneralViewModel(
                 settingsRepository: SettingsRepository<GeneralSettings>.GetInstance(mockGeneralSettingsUtils.Object),
                 "GeneralSettings_RunningAsAdminText",
                 "GeneralSettings_RunningAsUserText",
                 false,
                 false,
-                UpdateUIThemeMethod,
+                sendMockIPCConfigMSG,
+                sendRestartAdminIPCMessage,
+                checkForUpdates,
+                GeneralSettingsFileName);
+
+            Assert.IsFalse(viewModel.IncludePrereleaseUpdates);
+
+            viewModel.IncludePrereleaseUpdates = true;
+
+            Assert.IsTrue(sawExpectedIpcPayload);
+            Assert.IsTrue(updateCheckRequested);
+        }
+
+        [TestMethod]
+        public void IsElevatedShouldUpdateRunasAdminStatusAttrsWhenSuccessful()
+        {
+            // Arrange
+            Func<string, int> sendMockIPCConfigMSG = msg => { return 0; };
+            Func<string, int> sendRestartAdminIPCMessage = msg => { return 0; };
+            Action sendCheckForUpdatesIPCMessage = () => { };
+            GeneralViewModel viewModel = new TestGeneralViewModel(
+                settingsRepository: SettingsRepository<GeneralSettings>.GetInstance(mockGeneralSettingsUtils.Object),
+                "GeneralSettings_RunningAsAdminText",
+                "GeneralSettings_RunningAsUserText",
+                false,
+                false,
                 sendMockIPCConfigMSG,
                 sendRestartAdminIPCMessage,
                 sendCheckForUpdatesIPCMessage,
@@ -104,23 +254,34 @@ namespace ViewModelTests
         public void StartupShouldEnableRunOnStartUpWhenSuccessful()
         {
             // Assert
+            bool sawExpectedIpcPayload = false;
             Func<string, int> sendMockIPCConfigMSG = msg =>
             {
+                if (string.IsNullOrWhiteSpace(msg))
+                {
+                    return 0;
+                }
+
                 OutGoingGeneralSettings snd = JsonSerializer.Deserialize<OutGoingGeneralSettings>(msg);
+                if (snd?.GeneralSettings is null)
+                {
+                    return 0;
+                }
+
                 Assert.IsTrue(snd.GeneralSettings.Startup);
+                sawExpectedIpcPayload = true;
                 return 0;
             };
 
             // Arrange
             Func<string, int> sendRestartAdminIPCMessage = msg => { return 0; };
-            Func<string, int> sendCheckForUpdatesIPCMessage = msg => { return 0; };
-            GeneralViewModel viewModel = new GeneralViewModel(
+            Action sendCheckForUpdatesIPCMessage = () => { };
+            GeneralViewModel viewModel = new TestGeneralViewModel(
                 settingsRepository: SettingsRepository<GeneralSettings>.GetInstance(mockGeneralSettingsUtils.Object),
                 "GeneralSettings_RunningAsAdminText",
                 "GeneralSettings_RunningAsUserText",
                 false,
                 false,
-                UpdateUIThemeMethod,
                 sendMockIPCConfigMSG,
                 sendRestartAdminIPCMessage,
                 sendCheckForUpdatesIPCMessage,
@@ -129,30 +290,42 @@ namespace ViewModelTests
 
             // act
             viewModel.Startup = true;
+            Assert.IsTrue(sawExpectedIpcPayload);
         }
 
         [TestMethod]
         public void RunElevatedShouldEnableAlwaysRunElevatedWhenSuccessful()
         {
             // Assert
+            bool sawExpectedIpcPayload = false;
             Func<string, int> sendMockIPCConfigMSG = msg =>
             {
+                if (string.IsNullOrWhiteSpace(msg))
+                {
+                    return 0;
+                }
+
                 OutGoingGeneralSettings snd = JsonSerializer.Deserialize<OutGoingGeneralSettings>(msg);
+                if (snd?.GeneralSettings is null)
+                {
+                    return 0;
+                }
+
                 Assert.IsTrue(snd.GeneralSettings.RunElevated);
+                sawExpectedIpcPayload = true;
                 return 0;
             };
 
             Func<string, int> sendRestartAdminIPCMessage = msg => { return 0; };
-            Func<string, int> sendCheckForUpdatesIPCMessage = msg => { return 0; };
+            Action sendCheckForUpdatesIPCMessage = () => { };
 
             // Arrange
-            GeneralViewModel viewModel = new GeneralViewModel(
+            GeneralViewModel viewModel = new TestGeneralViewModel(
                 settingsRepository: SettingsRepository<GeneralSettings>.GetInstance(mockGeneralSettingsUtils.Object),
                 "GeneralSettings_RunningAsAdminText",
                 "GeneralSettings_RunningAsUserText",
                 false,
                 false,
-                UpdateUIThemeMethod,
                 sendMockIPCConfigMSG,
                 sendRestartAdminIPCMessage,
                 sendCheckForUpdatesIPCMessage,
@@ -162,6 +335,7 @@ namespace ViewModelTests
 
             // act
             viewModel.RunElevated = true;
+            Assert.IsTrue(sawExpectedIpcPayload);
         }
 
         [TestMethod]
@@ -169,24 +343,35 @@ namespace ViewModelTests
         {
             // Arrange
             GeneralViewModel viewModel = null;
+            bool sawExpectedIpcPayload = false;
 
             // Assert
             Func<string, int> sendMockIPCConfigMSG = msg =>
             {
+                if (string.IsNullOrWhiteSpace(msg))
+                {
+                    return 0;
+                }
+
                 OutGoingGeneralSettings snd = JsonSerializer.Deserialize<OutGoingGeneralSettings>(msg);
+                if (snd?.GeneralSettings is null)
+                {
+                    return 0;
+                }
+
                 Assert.AreEqual("light", snd.GeneralSettings.Theme);
+                sawExpectedIpcPayload = true;
                 return 0;
             };
 
             Func<string, int> sendRestartAdminIPCMessage = msg => { return 0; };
-            Func<string, int> sendCheckForUpdatesIPCMessage = msg => { return 0; };
-            viewModel = new GeneralViewModel(
+            Action sendCheckForUpdatesIPCMessage = () => { };
+            viewModel = new TestGeneralViewModel(
                 settingsRepository: SettingsRepository<GeneralSettings>.GetInstance(mockGeneralSettingsUtils.Object),
                 "GeneralSettings_RunningAsAdminText",
                 "GeneralSettings_RunningAsUserText",
                 false,
                 false,
-                UpdateUIThemeMethod,
                 sendMockIPCConfigMSG,
                 sendRestartAdminIPCMessage,
                 sendCheckForUpdatesIPCMessage,
@@ -195,29 +380,40 @@ namespace ViewModelTests
 
             // act
             viewModel.ThemeIndex = 1;
+            Assert.IsTrue(sawExpectedIpcPayload);
         }
 
         [TestMethod]
         public void IsDarkThemeRadioButtonCheckedShouldThemeToDarkWhenSuccessful()
         {
             // Arrange
-            // Assert
+            bool sawExpectedIpcPayload = false;
             Func<string, int> sendMockIPCConfigMSG = msg =>
             {
+                if (string.IsNullOrWhiteSpace(msg))
+                {
+                    return 0;
+                }
+
                 OutGoingGeneralSettings snd = JsonSerializer.Deserialize<OutGoingGeneralSettings>(msg);
+                if (snd?.GeneralSettings is null)
+                {
+                    return 0;
+                }
+
                 Assert.AreEqual("dark", snd.GeneralSettings.Theme);
+                sawExpectedIpcPayload = true;
                 return 0;
             };
 
             Func<string, int> sendRestartAdminIPCMessage = msg => { return 0; };
-            Func<string, int> sendCheckForUpdatesIPCMessage = msg => { return 0; };
-            GeneralViewModel viewModel = new GeneralViewModel(
+            Action sendCheckForUpdatesIPCMessage = () => { };
+            GeneralViewModel viewModel = new TestGeneralViewModel(
                 settingsRepository: SettingsRepository<GeneralSettings>.GetInstance(mockGeneralSettingsUtils.Object),
                 "GeneralSettings_RunningAsAdminText",
                 "GeneralSettings_RunningAsUserText",
                 false,
                 false,
-                UpdateUIThemeMethod,
                 sendMockIPCConfigMSG,
                 sendRestartAdminIPCMessage,
                 sendCheckForUpdatesIPCMessage,
@@ -226,6 +422,49 @@ namespace ViewModelTests
 
             // act
             viewModel.ThemeIndex = 0;
+            Assert.IsTrue(sawExpectedIpcPayload);
+        }
+
+        [TestMethod]
+        public void IsShowSysTrayIconEnabledByDefaultShouldDisableWhenSuccessful()
+        {
+            // Arrange
+            bool sawExpectedIpcPayload = false;
+            Func<string, int> sendMockIPCConfigMSG = msg =>
+            {
+                if (string.IsNullOrWhiteSpace(msg))
+                {
+                    return 0;
+                }
+
+                OutGoingGeneralSettings snd = JsonSerializer.Deserialize<OutGoingGeneralSettings>(msg);
+                if (snd?.GeneralSettings is null)
+                {
+                    return 0;
+                }
+
+                Assert.IsFalse(snd.GeneralSettings.ShowSysTrayIcon);
+                sawExpectedIpcPayload = true;
+                return 0;
+            };
+
+            Func<string, int> sendRestartAdminIPCMessage = msg => { return 0; };
+            Action sendCheckForUpdatesIPCMessage = () => { };
+            GeneralViewModel viewModel = new TestGeneralViewModel(
+                settingsRepository: SettingsRepository<GeneralSettings>.GetInstance(mockGeneralSettingsUtils.Object),
+                "GeneralSettings_RunningAsAdminText",
+                "GeneralSettings_RunningAsUserText",
+                false,
+                false,
+                sendMockIPCConfigMSG,
+                sendRestartAdminIPCMessage,
+                sendCheckForUpdatesIPCMessage,
+                GeneralSettingsFileName);
+            Assert.IsTrue(viewModel.ShowSysTrayIcon);
+
+            // Act
+            viewModel.ShowSysTrayIcon = false;
+            Assert.IsTrue(sawExpectedIpcPayload);
         }
 
         [TestMethod]
@@ -237,17 +476,11 @@ namespace ViewModelTests
             // Assert
             Assert.IsTrue(modules.FancyZones);
             Assert.IsTrue(modules.ImageResizer);
-            Assert.IsTrue(modules.FileExplorerPreview);
-            Assert.IsTrue(modules.ShortcutGuide);
+            Assert.IsTrue(modules.PowerPreview);
+            Assert.IsFalse(modules.ShortcutGuide);
             Assert.IsTrue(modules.PowerRename);
-            Assert.IsTrue(modules.KeyboardManager);
-            Assert.IsTrue(modules.PowerLauncher);
+            Assert.IsFalse(modules.PowerLauncher);
             Assert.IsTrue(modules.ColorPicker);
-        }
-
-        public static int UpdateUIThemeMethod(string themeName)
-        {
-            return 0;
         }
     }
 }

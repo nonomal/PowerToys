@@ -4,6 +4,7 @@
 
 using System;
 using Microsoft.PowerToys.Settings.UI.Library;
+using Microsoft.PowerToys.Settings.UI.Library.Interfaces;
 using Microsoft.PowerToys.Settings.UI.UnitTests.BackwardsCompatibility;
 using Microsoft.PowerToys.Settings.UI.ViewModels;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -12,9 +13,9 @@ using Moq;
 namespace ViewModelTests
 {
     [TestClass]
-    public class PowerLauncherViewModelTest
+    public class PowerLauncherViewModelTest : IDisposable
     {
-        private class SendCallbackMock
+        private sealed class SendCallbackMock
         {
             public int TimesSent { get; set; }
 
@@ -25,20 +26,48 @@ namespace ViewModelTests
             {
                 TimesSent++;
             }
+
+            [System.Diagnostics.CodeAnalysis.SuppressMessage("StyleCop.CSharp.NamingRules", "SA1313:Parameter names should begin with lower-case letter", Justification = "We actually don't validate setting, just calculate it was sent")]
+            public int OnSendIPC(string _)
+            {
+                TimesSent++;
+                return 0;
+            }
         }
 
         private PowerLauncherViewModel viewModel;
         private PowerLauncherSettings mockSettings;
         private SendCallbackMock sendCallbackMock;
+        private BackCompatTestProperties.MockSettingsRepository<GeneralSettings> mockGeneralSettingsRepository;
 
         [TestInitialize]
         public void Initialize()
         {
             mockSettings = new PowerLauncherSettings();
             sendCallbackMock = new SendCallbackMock();
+
+            var settingPathMock = new Mock<SettingPath>();
+            var mockGeneralIOProvider = BackCompatTestProperties.GetGeneralSettingsIOProvider("v0.22.0");
+            var mockGeneralSettingsUtils = new SettingsUtils(mockGeneralIOProvider.Object, settingPathMock.Object);
+            mockGeneralSettingsRepository = new BackCompatTestProperties.MockSettingsRepository<GeneralSettings>(mockGeneralSettingsUtils);
+
             viewModel = new PowerLauncherViewModel(
                 mockSettings,
-                new PowerLauncherViewModel.SendCallback(sendCallbackMock.OnSend));
+                mockGeneralSettingsRepository,
+                sendCallbackMock.OnSendIPC,
+                () => false);
+        }
+
+        [TestCleanup]
+        public void Cleanup()
+        {
+            viewModel?.Dispose();
+        }
+
+        public void Dispose()
+        {
+            viewModel?.Dispose();
+            GC.SuppressFinalize(this);
         }
 
         /// <summary>
@@ -52,7 +81,7 @@ namespace ViewModelTests
         [DataRow("v0.22.0", "settings.json")]
         public void OriginalFilesModificationTest(string version, string fileName)
         {
-            var settingPathMock = new Mock<ISettingsPath>();
+            var settingPathMock = new Mock<SettingPath>();
 
             var mockIOProvider = BackCompatTestProperties.GetModuleIOProvider(version, PowerLauncherSettings.ModuleName, fileName);
             var mockSettingsUtils = new SettingsUtils(mockIOProvider.Object, settingPathMock.Object);
@@ -66,11 +95,12 @@ namespace ViewModelTests
 
             // Initialise View Model with test Config files
             Func<string, int> sendMockIPCConfigMSG = msg => { return 0; };
-            PowerLauncherViewModel viewModel = new PowerLauncherViewModel(originalSettings, generalSettingsRepository, sendMockIPCConfigMSG, () => true);
+            using PowerLauncherViewModel viewModel = new PowerLauncherViewModel(originalSettings, generalSettingsRepository, sendMockIPCConfigMSG, () => true);
 
             // Verify that the old settings persisted
             Assert.AreEqual(originalGeneralSettings.Enabled.PowerLauncher, viewModel.EnablePowerLauncher);
             Assert.AreEqual(originalSettings.Properties.ClearInputOnLaunch, viewModel.ClearInputOnLaunch);
+            Assert.AreEqual(originalSettings.Properties.TabSelectsContextButtons, viewModel.TabSelectsContextButtons);
             Assert.AreEqual(originalSettings.Properties.CopyPathLocation.ToString(), viewModel.CopyPathLocation.ToString());
             Assert.AreEqual(originalSettings.Properties.IgnoreHotkeysInFullscreen, viewModel.IgnoreHotkeysInFullScreen);
             Assert.AreEqual(originalSettings.Properties.MaximumNumberOfResults, viewModel.MaximumNumberOfResults);
@@ -79,6 +109,10 @@ namespace ViewModelTests
             Assert.AreEqual(originalSettings.Properties.OverrideWinkeyS, viewModel.OverrideWinSKey);
             Assert.AreEqual(originalSettings.Properties.SearchResultPreference, viewModel.SearchResultPreference);
             Assert.AreEqual(originalSettings.Properties.SearchTypePreference, viewModel.SearchTypePreference);
+            Assert.AreEqual(originalSettings.Properties.GenerateThumbnailsFromFiles, viewModel.GenerateThumbnailsFromFiles);
+            Assert.AreEqual(originalSettings.Properties.UsePinyin, viewModel.UsePinyin);
+            Assert.AreEqual(originalSettings.Properties.ShowPluginsOverview, viewModel.ShowPluginsOverviewIndex);
+            Assert.AreEqual(originalSettings.Properties.TitleFontSize, viewModel.TitleFontSize);
 
             // Verify that the stub file was used
             var expectedCallCount = 2;  // once via the view model, and once by the test (GetSettings<T>)
@@ -91,7 +125,7 @@ namespace ViewModelTests
             viewModel.SearchResultPreference = "SearchOptionsAreNotValidated";
             viewModel.SearchTypePreference = "SearchOptionsAreNotValidated";
 
-            Assert.AreEqual(sendCallbackMock.TimesSent, 2);
+            Assert.AreEqual(2, sendCallbackMock.TimesSent);
             Assert.IsTrue(mockSettings.Properties.SearchResultPreference == "SearchOptionsAreNotValidated");
             Assert.IsTrue(mockSettings.Properties.SearchTypePreference == "SearchOptionsAreNotValidated");
         }

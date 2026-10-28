@@ -2,6 +2,8 @@
 // The Microsoft Corporation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using System.Diagnostics;
+using System.IO;
 using System.IO.Abstractions;
 using System.Text.Json.Serialization;
 
@@ -32,10 +34,18 @@ namespace Wox.Plugin
 
         public bool Disabled { get; set; }
 
+        // This property is used in PT Run only to decide whether or not to updated the Disabled property.
+        [JsonIgnore]
+        public bool IsEnabledPolicyConfigured { get; set; }
+
+        // Needs to be other than private set in order to be visible to the Json Source Generator
         [JsonInclude]
-        public string ExecuteFilePath { get; private set; }
+        public string ExecuteFilePath { get; internal set; }
 
         public string ExecuteFileName { get; set; }
+
+        [JsonIgnore]
+        public string ExecuteFileVersion { get; private set; }
 
         public string PluginDirectory
         {
@@ -48,6 +58,7 @@ namespace Wox.Plugin
             {
                 _pluginDirectory = value;
                 ExecuteFilePath = Path.Combine(value, ExecuteFileName);
+                SetExecutableVersion();
             }
         }
 
@@ -60,6 +71,8 @@ namespace Wox.Plugin
         public string IcoPathDark { get; set; }
 
         public string IcoPathLight { get; set; }
+
+        public bool DynamicLoading { get; set; }
 
         public override string ToString()
         {
@@ -77,5 +90,19 @@ namespace Wox.Plugin
 
         [JsonIgnore]
         public int QueryCount { get; set; }
+
+        private void SetExecutableVersion()
+        {
+            // Using version from plugin metadata json as fallback
+            try
+            {
+                var v = FileVersionInfo.GetVersionInfo(ExecuteFilePath).FileVersion;
+                ExecuteFileVersion = (v is null or "0.0.0.0") ? Version : v;
+            }
+            catch (FileNotFoundException)
+            {
+                ExecuteFileVersion = Version;
+            }
+        }
     }
 }

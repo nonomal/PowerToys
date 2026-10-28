@@ -1,37 +1,45 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Look at Directory.Build.props in root for common stuff as well -->
+  <Import Project="$(RepoRoot)src\Common.Dotnet.CsWinRT.props" />
+  <Import Project="$(RepoRoot)src\Common.SelfContained.props" />
+    <PropertyGroup>
+        <Description>PowerToys Settings UI Library</Description>
+        <AssemblyName>PowerToys.Settings.UI.Lib</AssemblyName>
+    </PropertyGroup>
 
-	<Import Project="..\..\Version.props" />
+    <ItemGroup>
+        <None Include="backup_restore_settings.json">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
 
-	<PropertyGroup>
-		<TargetFramework>net6.0-windows</TargetFramework>
-		<Version>$(Version).0</Version>
-		<Authors>Microsoft Corporation</Authors>
-		<Product>PowerToys</Product>
-		<Description>PowerToys Settings UI Library</Description>
-		<AssemblyName>PowerToys.Settings.UI.Lib</AssemblyName>
-		<UseWindowsForms>false</UseWindowsForms>
-	</PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="System.IO.Abstractions" />
+    </ItemGroup>
 
-	<PropertyGroup Condition="'$(Configuration)'=='Debug'">
-		<DefineConstants>DEBUG;TRACE</DefineConstants>
-		<DebugType>full</DebugType>
-		<DebugSymbols>true</DebugSymbols>
-	</PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\common\interop\PowerToys.Interop.vcxproj" />
+        <ProjectReference Include="..\..\modules\ZoomIt\ZoomItSettingsInterop\ZoomItSettingsInterop.vcxproj" />
+        <ProjectReference Include="..\..\common\ManagedCommon\ManagedCommon.csproj" />
+        <ProjectReference Include="..\..\common\ManagedTelemetry\Telemetry\ManagedTelemetry.csproj" />
+        <ProjectReference Include="..\..\modules\MouseUtils\MouseJump.Common\MouseJump.Common.csproj" />
+        <ProjectReference Include="..\..\modules\powerdisplay\PowerDisplay.Models\PowerDisplay.Models.csproj" />
+    </ItemGroup>
 
-	<ItemGroup>
-		<None Include="backup_restore_settings.json">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		</None>
-	</ItemGroup>
+    <ItemGroup>
+        <Compile Update="Resources\Resources.Designer.cs">
+            <DependentUpon>Resources.resx</DependentUpon>
+            <DesignTime>True</DesignTime>
+            <AutoGen>True</AutoGen>
+        </Compile>
+    </ItemGroup>
 
-	<ItemGroup>
-		<PackageReference Include="System.IO.Abstractions" Version="17.2.3" />
-	</ItemGroup>
-
-	<ItemGroup>
-		<ProjectReference Include="..\..\common\interop\PowerToys.Interop.vcxproj" />
-		<ProjectReference Include="..\..\common\ManagedCommon\ManagedCommon.csproj" />
-		<ProjectReference Include="..\..\common\ManagedTelemetry\Telemetry\ManagedTelemetry.csproj" />
-	</ItemGroup>
+    <ItemGroup>
+        <EmbeddedResource Update="Resources\Resources.resx">
+            <SubType>Designer</SubType>
+            <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+            <Generator>PublicResXFileCodeGenerator</Generator>
+        </EmbeddedResource>
+    </ItemGroup>
 
 </Project>

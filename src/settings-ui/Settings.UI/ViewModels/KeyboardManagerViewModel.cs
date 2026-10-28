@@ -8,30 +8,38 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using global::PowerToys.GPOWrapper;
+using ManagedCommon;
 using Microsoft.PowerToys.Settings.UI.Library;
 using Microsoft.PowerToys.Settings.UI.Library.Helpers;
 using Microsoft.PowerToys.Settings.UI.Library.Interfaces;
-using Microsoft.PowerToys.Settings.UI.Library.Utilities;
+using Microsoft.PowerToys.Settings.UI.Library.Telemetry.Events;
 using Microsoft.PowerToys.Settings.UI.Library.ViewModels.Commands;
+using Microsoft.PowerToys.Settings.UI.SerializationContext;
 using Microsoft.PowerToys.Settings.Utilities;
-using Windows.ApplicationModel.Resources;
+using Microsoft.PowerToys.Telemetry;
 
 namespace Microsoft.PowerToys.Settings.UI.ViewModels
 {
-    public class KeyboardManagerViewModel : Observable
+    public partial class KeyboardManagerViewModel : PageViewModelBase
     {
         private GeneralSettings GeneralSettingsConfig { get; set; }
 
-        private readonly ISettingsUtils _settingsUtils;
+        private readonly SettingsUtils _settingsUtils;
 
-        private const string PowerToyName = KeyboardManagerSettings.ModuleName;
+        protected override string ModuleName => KeyboardManagerSettings.ModuleName;
+
         private const string JsonFileType = ".json";
 
-        private const string KeyboardManagerEditorPath = "modules\\KeyboardManager\\KeyboardManagerEditor\\PowerToys.KeyboardManagerEditor.exe";
+        // Default editor path. Can be removed once the new WinUI3 editor is released.
+        private const string KeyboardManagerEditorPath = "KeyboardManagerEditor\\PowerToys.KeyboardManagerEditor.exe";
+
+        private const string KeyboardManagerEditorUIPath = "WinUI3Apps\\PowerToys.KeyboardManagerEditorUI.exe";
+
         private Process editor;
 
         private enum KeyboardManagerEditorType
@@ -48,48 +56,36 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
 
         private ICommand _remapKeyboardCommand;
         private ICommand _editShortcutCommand;
+        private ICommand _openNewEditorCommand;
         private KeyboardManagerProfile _profile;
 
         private Func<string, int> SendConfigMSG { get; }
 
         private Func<List<KeysDataModel>, int> FilterRemapKeysList { get; }
 
-        public KeyboardManagerViewModel(ISettingsUtils settingsUtils, ISettingsRepository<GeneralSettings> settingsRepository, Func<string, int> ipcMSGCallBackFunc, Func<List<KeysDataModel>, int> filterRemapKeysList)
+        public KeyboardManagerViewModel(SettingsUtils settingsUtils, ISettingsRepository<GeneralSettings> settingsRepository, Func<string, int> ipcMSGCallBackFunc, Func<List<KeysDataModel>, int> filterRemapKeysList)
         {
-            if (settingsRepository == null)
-            {
-                throw new ArgumentNullException(nameof(settingsRepository));
-            }
+            ArgumentNullException.ThrowIfNull(settingsRepository);
 
             GeneralSettingsConfig = settingsRepository.SettingsConfig;
 
-            _enabledGpoRuleConfiguration = GPOWrapper.GetConfiguredKeyboardManagerEnabledValue();
-            if (_enabledGpoRuleConfiguration == GpoRuleConfigured.Disabled || _enabledGpoRuleConfiguration == GpoRuleConfigured.Enabled)
-            {
-                // Get the enabled state from GPO.
-                _enabledStateIsGPOConfigured = true;
-                _isEnabled = _enabledGpoRuleConfiguration == GpoRuleConfigured.Enabled;
-            }
-            else
-            {
-                _isEnabled = GeneralSettingsConfig.Enabled.KeyboardManager;
-            }
+            InitializeEnabledValue();
 
-            // set the callback functions value to hangle outgoing IPC message.
+            // set the callback functions value to handle outgoing IPC message.
             SendConfigMSG = ipcMSGCallBackFunc;
             FilterRemapKeysList = filterRemapKeysList;
 
             _settingsUtils = settingsUtils ?? throw new ArgumentNullException(nameof(settingsUtils));
 
-            if (_settingsUtils.SettingsExists(PowerToyName))
+            if (_settingsUtils.SettingsExists(ModuleName))
             {
                 try
                 {
-                    Settings = _settingsUtils.GetSettingsOrDefault<KeyboardManagerSettings>(PowerToyName);
+                    Settings = _settingsUtils.GetSettingsOrDefault<KeyboardManagerSettings>(ModuleName);
                 }
                 catch (Exception e)
                 {
-                    Logger.LogError($"Exception encountered while reading {PowerToyName} settings.", e);
+                    Logger.LogError($"Exception encountered while reading {ModuleName} settings.", e);
 #if DEBUG
                     if (e is ArgumentException || e is ArgumentNullException || e is PathTooLongException)
                     {
@@ -107,7 +103,22 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             else
             {
                 Settings = new KeyboardManagerSettings();
-                _settingsUtils.SaveSettings(Settings.ToJsonString(), PowerToyName);
+                _settingsUtils.SaveSettings(Settings.ToJsonString(), ModuleName);
+            }
+        }
+
+        private void InitializeEnabledValue()
+        {
+            _enabledGpoRuleConfiguration = GPOWrapper.GetConfiguredKeyboardManagerEnabledValue();
+            if (_enabledGpoRuleConfiguration == GpoRuleConfigured.Disabled || _enabledGpoRuleConfiguration == GpoRuleConfigured.Enabled)
+            {
+                // Get the enabled state from GPO.
+                _enabledStateIsGPOConfigured = true;
+                _isEnabled = _enabledGpoRuleConfiguration == GpoRuleConfigured.Enabled;
+            }
+            else
+            {
+                _isEnabled = GeneralSettingsConfig.Enabled.KeyboardManager;
             }
         }
 
@@ -157,7 +168,7 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             {
                 if (_profile != null)
                 {
-                    return _profile.RemapKeys.InProcessRemapKeys;
+                    return _profile.RemapKeys.InProcessRemapKeys.Concat(_profile.RemapKeysToText.InProcessRemapKeys).ToList();
                 }
                 else
                 {
@@ -166,12 +177,69 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             }
         }
 
+        public override Dictionary<string, HotkeySettings[]> GetAllHotkeySettings()
+        {
+            var hotkeysDict = new Dictionary<string, HotkeySettings[]>
+            {
+                [ModuleName] = [EditorShortcut],
+            };
+
+            return hotkeysDict;
+        }
+
+        public bool UseNewEditor
+        {
+            get => Settings.Properties.UseNewEditor;
+            set
+            {
+                if (Settings.Properties.UseNewEditor != value)
+                {
+                    Settings.Properties.UseNewEditor = value;
+                    OnPropertyChanged(nameof(UseNewEditor));
+                    NotifySettingsChanged();
+                }
+            }
+        }
+
+        public HotkeySettings EditorShortcut
+        {
+            get => Settings.Properties.EditorShortcut;
+            set
+            {
+                if (value != Settings.Properties.EditorShortcut)
+                {
+                    Settings.Properties.EditorShortcut = value == null ? Settings.Properties.DefaultEditorShortcut : value;
+
+                    OnPropertyChanged(nameof(EditorShortcut));
+                    NotifySettingsChanged();
+
+                    SendConfigMSG(
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "{{ \"powertoys\": {{ \"{0}\": {1} }} }}",
+                            KeyboardManagerSettings.ModuleName,
+                            JsonSerializer.Serialize(Settings, SourceGenerationContextContext.Default.KeyboardManagerSettings)));
+                }
+            }
+        }
+
+        private void NotifySettingsChanged()
+        {
+            // Using InvariantCulture as this is an IPC message
+            SendConfigMSG(
+                   string.Format(
+                       CultureInfo.InvariantCulture,
+                       "{{ \"powertoys\": {{ \"{0}\": {1} }} }}",
+                       ModuleName,
+                       JsonSerializer.Serialize(Settings, SourceGenerationContextContext.Default.KeyboardManagerSettings)));
+        }
+
         public static List<AppSpecificKeysDataModel> CombineShortcutLists(List<KeysDataModel> globalShortcutList, List<AppSpecificKeysDataModel> appSpecificShortcutList)
         {
             string allAppsDescription = "All Apps";
             try
             {
-                ResourceLoader resourceLoader = ResourceLoader.GetForViewIndependentUse();
+                var resourceLoader = Helpers.ResourceLoaderInstance.ResourceLoader;
                 allAppsDescription = resourceLoader.GetString("KeyboardManager_All_Apps_Description");
             }
             catch (Exception ex)
@@ -189,11 +257,11 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             }
             else if (appSpecificShortcutList == null)
             {
-                return globalShortcutList.ConvertAll(x => new AppSpecificKeysDataModel { OriginalKeys = x.OriginalKeys, NewRemapKeys = x.NewRemapKeys, TargetApp = allAppsDescription }).ToList();
+                return globalShortcutList.ConvertAll(x => new AppSpecificKeysDataModel { OriginalKeys = x.OriginalKeys, NewRemapKeys = x.NewRemapKeys, NewRemapString = x.NewRemapString, RunProgramFilePath = x.RunProgramFilePath, OperationType = x.OperationType, OpenUri = x.OpenUri, SecondKeyOfChord = x.SecondKeyOfChord, RunProgramArgs = x.RunProgramArgs, TargetApp = allAppsDescription }).ToList();
             }
             else
             {
-                return globalShortcutList.ConvertAll(x => new AppSpecificKeysDataModel { OriginalKeys = x.OriginalKeys, NewRemapKeys = x.NewRemapKeys, TargetApp = allAppsDescription }).Concat(appSpecificShortcutList).ToList();
+                return globalShortcutList.ConvertAll(x => new AppSpecificKeysDataModel { OriginalKeys = x.OriginalKeys, NewRemapKeys = x.NewRemapKeys, NewRemapString = x.NewRemapString, RunProgramFilePath = x.RunProgramFilePath, OperationType = x.OperationType, OpenUri = x.OpenUri, SecondKeyOfChord = x.SecondKeyOfChord, RunProgramArgs = x.RunProgramArgs, TargetApp = allAppsDescription }).Concat(appSpecificShortcutList).ToList();
             }
         }
 
@@ -203,7 +271,7 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             {
                 if (_profile != null)
                 {
-                    return CombineShortcutLists(_profile.RemapShortcuts.GlobalRemapShortcuts, _profile.RemapShortcuts.AppSpecificRemapShortcuts);
+                    return CombineShortcutLists(_profile.RemapShortcuts.GlobalRemapShortcuts, _profile.RemapShortcuts.AppSpecificRemapShortcuts).Concat(CombineShortcutLists(_profile.RemapShortcutsToText.GlobalRemapShortcuts, _profile.RemapShortcutsToText.AppSpecificRemapShortcuts)).ToList();
                 }
                 else
                 {
@@ -216,14 +284,21 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
 
         public ICommand EditShortcutCommand => _editShortcutCommand ?? (_editShortcutCommand = new RelayCommand(OnEditShortcut));
 
-        private void OnRemapKeyboard()
+        public ICommand OpenNewEditorCommand => _openNewEditorCommand ?? (_openNewEditorCommand = new RelayCommand(OnOpenNewEditor));
+
+        public void OnRemapKeyboard()
         {
             OpenEditor((int)KeyboardManagerEditorType.KeyEditor);
         }
 
-        private void OnEditShortcut()
+        public void OnEditShortcut()
         {
             OpenEditor((int)KeyboardManagerEditorType.ShortcutEditor);
+        }
+
+        public void OnOpenNewEditor()
+        {
+            OpenNewEditor();
         }
 
         private static void BringProcessToFront(Process process)
@@ -248,26 +323,64 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             {
                 if (editor != null && editor.HasExited)
                 {
-                    Logger.LogInfo($"Previous instance of {PowerToyName} editor exited");
+                    Logger.LogInfo($"Previous instance of {ModuleName} editor exited");
                     editor = null;
                 }
 
                 if (editor != null)
                 {
-                    Logger.LogInfo($"The {PowerToyName} editor instance {editor.Id} exists. Bringing the process to the front");
+                    Logger.LogInfo($"The {ModuleName} editor instance {editor.Id} exists. Bringing the process to the front");
                     BringProcessToFront(editor);
                     return;
                 }
 
                 string path = Path.Combine(Environment.CurrentDirectory, KeyboardManagerEditorPath);
-                Logger.LogInfo($"Starting {PowerToyName} editor from {path}");
+                Logger.LogInfo($"Starting {ModuleName} editor from {path}");
 
                 // InvariantCulture: type represents the KeyboardManagerEditorType enum value
-                editor = Process.Start(path, $"{type.ToString(CultureInfo.InvariantCulture)} {Environment.ProcessId}");
+                ProcessStartInfo startInfo = new ProcessStartInfo(path);
+                startInfo.UseShellExecute = true; // LOAD BEARING
+                startInfo.Arguments = $"{type.ToString(CultureInfo.InvariantCulture)} {Environment.ProcessId}";
+                System.Environment.SetEnvironmentVariable("MICROSOFT_WINDOWSAPPRUNTIME_BASE_DIRECTORY", null);
+                editor = Process.Start(startInfo);
+                PowerToysTelemetry.Log.WriteEvent(new ModuleLaunchedFromSettingsEvent("KeyboardManagerClassic"));
             }
             catch (Exception e)
             {
-                Logger.LogError($"Exception encountered when opening an {PowerToyName} editor", e);
+                Logger.LogError($"Exception encountered when opening an {ModuleName} editor", e);
+            }
+        }
+
+        private void OpenNewEditor()
+        {
+            try
+            {
+                if (editor != null && editor.HasExited)
+                {
+                    Logger.LogInfo($"Previous instance of {ModuleName} editor exited");
+                    editor = null;
+                }
+
+                if (editor != null)
+                {
+                    Logger.LogInfo($"The {ModuleName} editor instance {editor.Id} exists. Bringing the process to the front");
+                    BringProcessToFront(editor);
+                    return;
+                }
+
+                string path = Path.Combine(Environment.CurrentDirectory, KeyboardManagerEditorUIPath);
+                Logger.LogInfo($"Starting {ModuleName} new editor from {path}");
+
+                System.Environment.SetEnvironmentVariable("MICROSOFT_WINDOWSAPPRUNTIME_BASE_DIRECTORY", null);
+                ProcessStartInfo startInfo = new ProcessStartInfo(path);
+                startInfo.UseShellExecute = true; // LOAD BEARING
+                startInfo.Arguments = $"{Environment.ProcessId}";
+                editor = Process.Start(startInfo);
+                PowerToysTelemetry.Log.WriteEvent(new ModuleLaunchedFromSettingsEvent("KeyboardManagerWinUI"));
+            }
+            catch (Exception e)
+            {
+                Logger.LogError($"Exception encountered when opening the new {ModuleName} editor", e);
             }
         }
 
@@ -275,6 +388,12 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
         {
             OnPropertyChanged(nameof(RemapKeys));
             OnPropertyChanged(nameof(RemapShortcuts));
+        }
+
+        public void RefreshEnabledState()
+        {
+            InitializeEnabledValue();
+            OnPropertyChanged(nameof(Enabled));
         }
 
         public bool LoadProfile()
@@ -294,7 +413,7 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
                 {
                     while (!readSuccessfully && !ts.IsCancellationRequested)
                     {
-                        profileExists = _settingsUtils.SettingsExists(PowerToyName, fileName);
+                        profileExists = _settingsUtils.SettingsExists(ModuleName, fileName);
                         if (!profileExists)
                         {
                             break;
@@ -303,12 +422,12 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
                         {
                             try
                             {
-                                _profile = _settingsUtils.GetSettingsOrDefault<KeyboardManagerProfile>(PowerToyName, fileName);
+                                _profile = _settingsUtils.GetSettingsOrDefault<KeyboardManagerProfile>(ModuleName, fileName);
                                 readSuccessfully = true;
                             }
                             catch (Exception e)
                             {
-                                Logger.LogError($"Exception encountered when reading {PowerToyName} settings", e);
+                                Logger.LogError($"Exception encountered when reading {ModuleName} settings", e);
                             }
                         }
 
@@ -326,6 +445,7 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
                 if (readSuccessfully)
                 {
                     FilterRemapKeysList(_profile?.RemapKeys?.InProcessRemapKeys);
+                    FilterRemapKeysList(_profile?.RemapKeysToText?.InProcessRemapKeys);
                 }
                 else
                 {
@@ -334,23 +454,23 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
 
                 if (!completedInTime)
                 {
-                    Logger.LogError($"Timeout encountered when loading {PowerToyName} profile");
+                    Logger.LogError($"Timeout encountered when loading {ModuleName} profile");
                 }
             }
             catch (Exception e)
             {
                 // Failed to load the configuration.
-                Logger.LogError($"Exception encountered when loading {PowerToyName} profile", e);
+                Logger.LogError($"Exception encountered when loading {ModuleName} profile", e);
                 success = false;
             }
 
             if (!profileExists)
             {
-                Logger.LogInfo($"Couldn't load {PowerToyName} profile because it doesn't exist");
+                Logger.LogInfo($"Couldn't load {ModuleName} profile because it doesn't exist");
             }
             else if (!success)
             {
-                Logger.LogError($"Couldn't load {PowerToyName} profile");
+                Logger.LogError($"Couldn't load {ModuleName} profile");
             }
 
             return success;

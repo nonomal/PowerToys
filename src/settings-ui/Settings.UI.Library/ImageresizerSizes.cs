@@ -10,11 +10,13 @@ namespace Microsoft.PowerToys.Settings.UI.Library
 {
     public class ImageResizerSizes
     {
-        // Suppressing this warning because removing the setter breaks
-        // deserialization with System.Text.Json. This affects the UI display.
-        // See: https://github.com/dotnet/runtime/issues/30258
+        private static readonly JsonSerializerOptions _serializerOptions = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+        };
+
         [JsonPropertyName("value")]
-        public ObservableCollection<ImageSize> Value { get; set; }
+        public ObservableCollection<ImageSize> Value { get; init; }
 
         public ImageResizerSizes()
         {
@@ -28,10 +30,7 @@ namespace Microsoft.PowerToys.Settings.UI.Library
 
         public string ToJsonString()
         {
-            var options = new JsonSerializerOptions
-            {
-                WriteIndented = true,
-            };
+            var options = _serializerOptions;
             return JsonSerializer.Serialize(this, options);
         }
     }

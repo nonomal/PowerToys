@@ -3,9 +3,10 @@
 #ifndef PCH_H
 #define PCH_H
 
+#pragma warning(push)
 #pragma warning(disable : 5205)
 #include <winrt/base.h>
-#pragma warning(default : 5205)
+#pragma warning(pop)
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
@@ -23,8 +24,6 @@
 #include <regex>
 #include <charconv>
 
-#include <expected.hpp>
-
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.ApplicationModel.h>
@@ -32,6 +31,7 @@
 #include <winrt/Windows.System.h>
 
 #include <wil/resource.h>
+#include <wil/coroutine.h>
 
 #endif //PCH_H
 

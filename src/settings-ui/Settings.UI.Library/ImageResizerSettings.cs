@@ -5,6 +5,7 @@
 using System;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+
 using Microsoft.PowerToys.Settings.UI.Library.Interfaces;
 
 namespace Microsoft.PowerToys.Settings.UI.Library
@@ -12,6 +13,11 @@ namespace Microsoft.PowerToys.Settings.UI.Library
     public class ImageResizerSettings : BasePTModuleSettings, ISettingsConfig
     {
         public const string ModuleName = "Image Resizer";
+
+        private static readonly JsonSerializerOptions _serializerOptions = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+        };
 
         [JsonPropertyName("properties")]
         public ImageResizerProperties Properties { get; set; }
@@ -31,11 +37,7 @@ namespace Microsoft.PowerToys.Settings.UI.Library
 
         public override string ToJsonString()
         {
-            var options = new JsonSerializerOptions
-            {
-                WriteIndented = true,
-            };
-            return JsonSerializer.Serialize(this, options);
+            return JsonSerializer.Serialize(this, SettingsSerializationContext.Default.ImageResizerSettings);
         }
 
         public string GetModuleName()

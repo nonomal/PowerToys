@@ -1,10 +1,12 @@
 {
-  "RestartAfterRestore": true,  
+  "RestartAfterRestore": true,
   "IncludeFiles": [
     "*Keyboard Manager\\default.json",
     "*settings.json",
+    "*FancyZones\\custom-layouts.json",
     "*FancyZones\\layout-hotkeys.json",
-    "*FancyZones\\layout-templates.json"
+    "*FancyZones\\layout-templates.json",
+    "*Workspaces\\workspaces.json"
   ],
   "IgnoreFiles": [
     "*PowerToys\\log_settings.json",
@@ -25,6 +27,11 @@
       ]
     }
   ],
+  "CustomRestoreSettings": {
+    "\\Keyboard Manager\\default.json": {
+      "overwrite": true
+    }
+  },
   "IgnoredSettings": {
     "backup-restore_settings.json": [
       "RestartAfterRestore"

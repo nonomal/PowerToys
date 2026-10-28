@@ -1,37 +1,38 @@
-﻿// Copyright (c) Microsoft Corporation
+// Copyright (c) Microsoft Corporation
 // The Microsoft Corporation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
 using System;
-using System.ComponentModel.Composition;
-using System.Windows;
-using System.Windows.Interop;
+
 using ColorPicker.Settings;
 using ColorPicker.ViewModelContracts;
 using Common.UI;
 using Microsoft.PowerToys.Settings.UI.Library.Enumerations;
+using Microsoft.UI.Xaml;
+using WinUIEx;
+
+using static ColorPicker.Helpers.NativeMethodsHelper;
 
 namespace ColorPicker.Helpers
 {
-    [Export(typeof(AppStateHandler))]
     public class AppStateHandler
     {
         private readonly IColorEditorViewModel _colorEditorViewModel;
         private readonly IUserSettings _userSettings;
+        private readonly object _colorPickerVisibilityLock = new object();
         private ColorEditorWindow _colorEditorWindow;
         private bool _colorPickerShown;
-        private object _colorPickerVisibilityLock = new object();
+        private IntPtr _mainWindowHandle;
 
-        private HwndSource _hwndSource;
-        private const int _globalHotKeyId = 0x0001;
-
-        // Blocks using the escape key to close the color picker editor when the adjust color flyout is open.
-        public static bool BlockEscapeKeyClosingColorPickerEditor { get; set; }
-
-        [ImportingConstructor]
         public AppStateHandler(IColorEditorViewModel colorEditorViewModel, IUserSettings userSettings)
         {
-            Application.Current.MainWindow.Closed += MainWindow_Closed;
+            // App.Window (the picking overlay) is created and assigned before the DI graph that
+            // resolves this handler, so it is available here.
+            if (App.Window != null)
+            {
+                App.Window.Closed += MainWindow_Closed;
+            }
+
             _colorEditorViewModel = colorEditorViewModel;
             _userSettings = userSettings;
         }
@@ -41,6 +42,12 @@ namespace ColorPicker.Helpers
         public event EventHandler AppHidden;
 
         public event EventHandler AppClosed;
+
+        public event EventHandler EnterPressed;
+
+        public event EventHandler UserSessionStarted;
+
+        public event EventHandler UserSessionEnded;
 
         public void StartUserSession()
         {
@@ -61,10 +68,9 @@ namespace ColorPicker.Helpers
                     ShowColorPicker();
                 }
 
-                // Handle the escape key to close Color Picker locally when being spawn from PowerToys, since Keyboard Hooks from the KeyboardMonitor are heavy.
-                if (!(System.Windows.Application.Current as ColorPickerUI.App).IsRunningDetachedFromPowerToys())
+                if (!((App)Application.Current).IsRunningDetachedFromPowerToys())
                 {
-                    SetupEscapeGlobalKeyShortcut();
+                    UserSessionStarted?.Invoke(this, EventArgs.Empty);
                 }
             }
         }
@@ -84,10 +90,9 @@ namespace ColorPicker.Helpers
                         HideColorPicker();
                     }
 
-                    // Handle the escape key to close Color Picker locally when being spawn from PowerToys, since Keyboard Hooks from the KeyboardMonitor are heavy.
-                    if (!(System.Windows.Application.Current as ColorPickerUI.App).IsRunningDetachedFromPowerToys())
+                    if (!((App)Application.Current).IsRunningDetachedFromPowerToys())
                     {
-                        ClearEscapeGlobalKeyShortcut();
+                        UserSessionEnded?.Invoke(this, EventArgs.Empty);
                     }
 
                     SessionEventHelper.End();
@@ -99,27 +104,14 @@ namespace ColorPicker.Helpers
             }
         }
 
-        public void OnColorPickerMouseDown()
+        public void OpenColorEditor()
         {
-            if (_userSettings.ActivationAction.Value == ColorPickerActivationAction.OpenColorPickerAndThenEditor || _userSettings.ActivationAction.Value == ColorPickerActivationAction.OpenEditor)
+            lock (_colorPickerVisibilityLock)
             {
-                lock (_colorPickerVisibilityLock)
-                {
-                    HideColorPicker();
-                }
-
-                ShowColorPickerEditor();
+                HideColorPicker();
             }
-            else
-            {
-                EndUserSession();
-            }
-        }
 
-        public static void SetTopMost()
-        {
-            Application.Current.MainWindow.Topmost = false;
-            Application.Current.MainWindow.Topmost = true;
+            ShowColorPickerEditor();
         }
 
         private void ShowColorPicker()
@@ -127,8 +119,7 @@ namespace ColorPicker.Helpers
             if (!_colorPickerShown)
             {
                 AppShown?.Invoke(this, EventArgs.Empty);
-                Application.Current.MainWindow.Opacity = 0;
-                Application.Current.MainWindow.Visibility = Visibility.Visible;
+                (App.Window as ColorPickerOverlayWindow)?.Show();
                 _colorPickerShown = true;
             }
         }
@@ -137,8 +128,7 @@ namespace ColorPicker.Helpers
         {
             if (_colorPickerShown)
             {
-                Application.Current.MainWindow.Opacity = 0;
-                Application.Current.MainWindow.Visibility = Visibility.Collapsed;
+                (App.Window as ColorPickerOverlayWindow)?.Hide();
                 AppHidden?.Invoke(this, EventArgs.Empty);
                 _colorPickerShown = false;
             }
@@ -149,7 +139,10 @@ namespace ColorPicker.Helpers
             if (_colorEditorWindow == null)
             {
                 _colorEditorWindow = new ColorEditorWindow(this);
-                _colorEditorWindow.Content = _colorEditorViewModel;
+
+                // Export converts the editor HWND to the WindowId required by FileSavePicker.
+                _colorEditorViewModel.WindowHandle = _colorEditorWindow.GetWindowHandle();
+                _colorEditorWindow.ContentPresenter.Content = new Views.ColorEditorView { DataContext = _colorEditorViewModel };
                 _colorEditorViewModel.OpenColorPickerRequested += ColorEditorViewModel_OpenColorPickerRequested;
                 _colorEditorViewModel.OpenSettingsRequested += ColorEditorViewModel_OpenSettingsRequested;
                 _colorEditorViewModel.OpenColorPickerRequested += (object sender, EventArgs e) =>
@@ -160,26 +153,18 @@ namespace ColorPicker.Helpers
 
             _colorEditorViewModel.Initialize();
             _colorEditorWindow.Show();
+            _colorEditorWindow.Activate();
             SessionEventHelper.Event.EditorOpened = true;
         }
 
         private void HideColorPickerEditor()
         {
-            if (_colorEditorWindow != null)
-            {
-                _colorEditorWindow.Hide();
-            }
+            _colorEditorWindow?.Hide();
         }
 
         public bool IsColorPickerEditorVisible()
         {
-            if (_colorEditorWindow != null)
-            {
-                // Check if we are visible and on top. Using focus producing unreliable results the first time the picker is opened.
-                return _colorEditorWindow.Topmost && _colorEditorWindow.IsVisible;
-            }
-
-            return false;
+            return _colorEditorWindow != null && _colorEditorWindow.AppWindow.IsVisible;
         }
 
         public bool IsColorPickerVisible()
@@ -187,7 +172,7 @@ namespace ColorPicker.Helpers
             return _colorPickerShown;
         }
 
-        private void MainWindow_Closed(object sender, EventArgs e)
+        private void MainWindow_Closed(object sender, WindowEventArgs e)
         {
             AppClosed?.Invoke(this, EventArgs.Empty);
         }
@@ -199,7 +184,7 @@ namespace ColorPicker.Helpers
                 ShowColorPicker();
             }
 
-            _colorEditorWindow.Hide();
+            _colorEditorWindow?.Hide();
         }
 
         private void ColorEditorViewModel_OpenSettingsRequested(object sender, EventArgs e)
@@ -207,64 +192,41 @@ namespace ColorPicker.Helpers
             SettingsDeepLink.OpenSettings(SettingsDeepLink.SettingsWindow.ColorPicker);
         }
 
-        internal void RegisterWindowHandle(System.Windows.Interop.HwndSource hwndSource)
+        internal void RegisterWindowHandle(IntPtr hwnd)
         {
-            _hwndSource = hwndSource;
+            _mainWindowHandle = hwnd;
         }
 
-        public IntPtr ProcessWindowMessages(IntPtr hwnd, int msg, IntPtr wparam, IntPtr lparam, ref bool handled)
+        public bool HandleEnterPressed()
         {
-            switch (msg)
+            if (!_colorPickerShown)
             {
-                case NativeMethods.WM_HOTKEY:
-                    if (!BlockEscapeKeyClosingColorPickerEditor)
-                    {
-                        handled = EndUserSession();
-                    }
-                    else
-                    {
-                        // If escape key is blocked it means a submenu is open.
-                        // Send the escape key to the Window to close that submenu.
-                        // Description for LPARAM in https://learn.microsoft.com/windows/win32/inputdev/wm-keyup#parameters
-                        // It's basically some modifiers + scancode for escape (1) + number of repetitions (1)
-                        handled = true;
-                        handled &= NativeMethods.PostMessage(_hwndSource.Handle, NativeMethods.WM_KEYDOWN, (IntPtr)NativeMethods.VK_ESCAPE, (IntPtr)0x00010001);
-                        handled &= NativeMethods.PostMessage(_hwndSource.Handle, NativeMethods.WM_KEYUP, (IntPtr)NativeMethods.VK_ESCAPE, (IntPtr)0xC0010001);
-                    }
-
-                    break;
+                return false;
             }
 
-            return IntPtr.Zero;
+            EnterPressed?.Invoke(this, EventArgs.Empty);
+            return true;
         }
 
-        public void SetupEscapeGlobalKeyShortcut()
+        public bool HandleEscPressed()
         {
-            if (_hwndSource == null)
+            if (!EditorState.BlockEscapeKeyClosingColorPickerEditor
+                && (_colorPickerShown || (_colorEditorWindow != null && _colorEditorWindow.IsActiveWindow)))
             {
-                return;
+                return EndUserSession();
             }
 
-            _hwndSource.AddHook(ProcessWindowMessages);
-            if (!NativeMethods.RegisterHotKey(_hwndSource.Handle, _globalHotKeyId, NativeMethods.MOD_NOREPEAT, NativeMethods.VK_ESCAPE))
-            {
-                Logger.LogWarning("Couldn't register the hotkey for Esc.");
-            }
+            return false;
         }
 
-        public void ClearEscapeGlobalKeyShortcut()
+        internal void MoveCursor(int xOffset, int yOffset)
         {
-            if (_hwndSource == null)
-            {
-                return;
-            }
-
-            if (!NativeMethods.UnregisterHotKey(_hwndSource.Handle, _globalHotKeyId))
-            {
-                Logger.LogWarning("Couldn't unregister the hotkey for Esc.");
-            }
-
-            _hwndSource.RemoveHook(ProcessWindowMessages);
+            GetCursorPos(out POINT lpPoint);
+            lpPoint.X += xOffset;
+            lpPoint.Y += yOffset;
+            SetCursorPos(lpPoint.X, lpPoint.Y);
         }
+
+        internal IntPtr GetMainWindowHandle() => _mainWindowHandle;
     }
 }

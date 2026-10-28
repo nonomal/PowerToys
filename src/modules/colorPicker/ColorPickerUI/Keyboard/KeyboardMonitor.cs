@@ -1,19 +1,19 @@
-﻿// Copyright (c) Microsoft Corporation
+// Copyright (c) Microsoft Corporation
 // The Microsoft Corporation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Generic;
-using System.ComponentModel.Composition;
-using System.Windows.Input;
+
 using ColorPicker.Helpers;
 using ColorPicker.Settings;
 using Microsoft.PowerToys.Settings.UI.Library.Utilities;
+using Windows.System;
+
 using static ColorPicker.NativeMethods;
 
 namespace ColorPicker.Keyboard
 {
-    [Export(typeof(KeyboardMonitor))]
     public class KeyboardMonitor : IDisposable
     {
         private readonly AppStateHandler _appStateHandler;
@@ -22,10 +22,10 @@ namespace ColorPicker.Keyboard
 
         private List<string> _activationKeys = new List<string>();
         private GlobalKeyboardHook _keyboardHook;
-        private bool disposedValue;
         private bool _activationShortcutPressed;
+        private int keyboardMoveSpeed;
+        private VirtualKey lastArrowKeyPressed = VirtualKey.None;
 
-        [ImportingConstructor]
         public KeyboardMonitor(AppStateHandler appStateHandler, IUserSettings userSettings)
         {
             _appStateHandler = appStateHandler;
@@ -36,8 +36,31 @@ namespace ColorPicker.Keyboard
 
         public void Start()
         {
+            // Make Start() idempotent: tear down any existing hook before creating a new one so a
+            // repeated or re-entrant Start() (e.g. the activation shortcut pressed again while a
+            // session is already active) cannot orphan the previous GlobalKeyboardHook — its native
+            // WH_KEYBOARD_LL registration would otherwise never be unhooked and its pinned callback
+            // delegate would be left dangling.
+            DisposeHook();
+
             _keyboardHook = new GlobalKeyboardHook();
             _keyboardHook.KeyboardPressed += Hook_KeyboardPressed;
+        }
+
+        private void DisposeHook()
+        {
+            var hook = _keyboardHook;
+            if (hook != null)
+            {
+                // Unsubscribe before Dispose so no keyboard callbacks fire during teardown.
+                hook.KeyboardPressed -= Hook_KeyboardPressed;
+
+                // Null the field only after Dispose succeeds. A Win32Exception from
+                // UnhookWindowsHookEx retains the reference so a subsequent cleanup
+                // attempt (e.g. the next Start() call) can retry disposal.
+                hook.Dispose();
+                _keyboardHook = null;
+            }
         }
 
         private void SetActivationKeys()
@@ -67,17 +90,43 @@ namespace ColorPicker.Keyboard
             var virtualCode = e.KeyboardData.VirtualCode;
 
             // ESC pressed
-            if (virtualCode == KeyInterop.VirtualKeyFromKey(Key.Escape)
-                && e.KeyboardState == GlobalKeyboardHook.KeyboardState.KeyDown
-                )
+            if (virtualCode == (int)VirtualKey.Escape && e.KeyboardState == GlobalKeyboardHook.KeyboardState.KeyDown)
             {
-                if (_appStateHandler.IsColorPickerVisible()
-                    || !AppStateHandler.BlockEscapeKeyClosingColorPickerEditor
-                    )
-                {
-                    e.Handled = _appStateHandler.EndUserSession();
-                    return;
-                }
+                e.Handled = _appStateHandler.HandleEscPressed();
+                return;
+            }
+
+            if ((virtualCode == (int)VirtualKey.Space || virtualCode == (int)VirtualKey.Enter) && (e.KeyboardState == GlobalKeyboardHook.KeyboardState.KeyDown))
+            {
+                e.Handled = _appStateHandler.HandleEnterPressed();
+                return;
+            }
+
+            if (virtualCode == (int)VirtualKey.Back && e.KeyboardState == GlobalKeyboardHook.KeyboardState.KeyDown)
+            {
+                e.Handled = _appStateHandler.HandleEscPressed();
+                return;
+            }
+
+            if (CheckMoveNeeded(virtualCode, VirtualKey.Up, e, 0, -1))
+            {
+                e.Handled = true;
+                return;
+            }
+            else if (CheckMoveNeeded(virtualCode, VirtualKey.Down, e, 0, 1))
+            {
+                e.Handled = true;
+                return;
+            }
+            else if (CheckMoveNeeded(virtualCode, VirtualKey.Left, e, -1, 0))
+            {
+                e.Handled = true;
+                return;
+            }
+            else if (CheckMoveNeeded(virtualCode, VirtualKey.Right, e, 1, 0))
+            {
+                e.Handled = true;
+                return;
             }
 
             var name = Helper.GetKeyName((uint)virtualCode);
@@ -113,6 +162,35 @@ namespace ColorPicker.Keyboard
                     _appStateHandler.StartUserSession();
                 }
             }
+        }
+
+        private bool CheckMoveNeeded(int virtualCode, VirtualKey key, GlobalKeyboardHookEventArgs e, int xMove, int yMove)
+        {
+            if (virtualCode == (int)key)
+            {
+                if (e.KeyboardState == GlobalKeyboardHook.KeyboardState.KeyDown && _appStateHandler.IsColorPickerVisible())
+                {
+                    if (lastArrowKeyPressed == key)
+                    {
+                        keyboardMoveSpeed++;
+                    }
+                    else
+                    {
+                        keyboardMoveSpeed = 1;
+                    }
+
+                    lastArrowKeyPressed = key;
+                    _appStateHandler.MoveCursor(keyboardMoveSpeed * xMove, keyboardMoveSpeed * yMove);
+                    return true;
+                }
+                else if (e.KeyboardState == GlobalKeyboardHook.KeyboardState.KeyUp)
+                {
+                    lastArrowKeyPressed = VirtualKey.None;
+                    keyboardMoveSpeed = 0;
+                }
+            }
+
+            return false;
         }
 
         private static bool ArraysAreSame(List<string> first, List<string> second)
@@ -158,18 +236,7 @@ namespace ColorPicker.Keyboard
 
         protected virtual void Dispose(bool disposing)
         {
-            if (!disposedValue)
-            {
-                if (disposing)
-                {
-                    // TODO: dispose managed state (managed objects)
-                    _keyboardHook?.Dispose();
-                }
-
-                // TODO: free unmanaged resources (unmanaged objects) and override finalizer
-                // TODO: set large fields to null
-                disposedValue = true;
-            }
+            DisposeHook();
         }
 
         public void Dispose()

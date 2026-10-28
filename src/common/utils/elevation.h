@@ -16,6 +16,9 @@
 
 #include <string>
 #include <filesystem>
+#include <functional>
+#include <vector>
+#include <wil/resource.h>
 
 #include <common/logger/logger.h>
 #include <common/utils/winapi_error.h>
@@ -34,7 +37,7 @@ namespace
     {
         CComPtr<IShellWindows> spShellWindows;
         auto result = spShellWindows.CoCreateInstance(CLSID_ShellWindows);
-        if (result != S_OK)
+        if (result != S_OK || spShellWindows == nullptr)
         {
             Logger::warn(L"Failed to create instance. {}", GetErrorString(result));
             return false;
@@ -47,7 +50,7 @@ namespace
         result = spShellWindows->FindWindowSW(
             &vtLoc, &vtEmpty, SWC_DESKTOP, &lhwnd, SWFO_NEEDDISPATCH, &spdisp);
 
-        if (result != S_OK)
+        if (result != S_OK || spdisp == nullptr)
         {
             Logger::warn(L"Failed to find the window. {}", GetErrorString(result));
             return false;
@@ -56,7 +59,7 @@ namespace
         CComPtr<IShellBrowser> spBrowser;
         result = CComQIPtr<IServiceProvider>(spdisp)->QueryService(SID_STopLevelBrowser,
                                                                    IID_PPV_ARGS(&spBrowser));
-        if (result != S_OK)
+        if (result != S_OK || spBrowser == nullptr)
         {
             Logger::warn(L"Failed to query service. {}", GetErrorString(result));
             return false;
@@ -64,14 +67,14 @@ namespace
 
         CComPtr<IShellView> spView;
         result = spBrowser->QueryActiveShellView(&spView);
-        if (result != S_OK)
+        if (result != S_OK || spView == nullptr)
         {
             Logger::warn(L"Failed to query active shell window. {}", GetErrorString(result));
             return false;
         }
 
         result = spView->QueryInterface(riid, ppv);
-        if (result != S_OK)
+        if (result != S_OK || ppv == nullptr || *ppv == nullptr)
         {
             Logger::warn(L"Failed to query interface. {}", GetErrorString(result));
             return false;
@@ -83,7 +86,7 @@ namespace
     inline bool GetDesktopAutomationObject(REFIID riid, void** ppv)
     {
         CComPtr<IShellView> spsv;
-        
+
         // Desktop may not be available on startup
         auto attempts = 5;
         for (auto i = 1; i <= attempts; i++)
@@ -141,12 +144,23 @@ namespace
             return false;
         }
 
-        CComQIPtr<IShellDispatch2>(spdispShell)
-            ->ShellExecuteW(CComBSTR(pszFile),
-                            CComVariant(pszParameters ? pszParameters : L""),
-                            CComVariant(workingDir),
-                            CComVariant(L""),
-                            CComVariant(SW_SHOWNORMAL));
+        CComQIPtr<IShellDispatch2> shellDispatch(spdispShell);
+        if (shellDispatch == nullptr)
+        {
+            Logger::warn(L"Failed to query IShellDispatch2");
+            return false;
+        }
+
+        result = shellDispatch->ShellExecuteW(CComBSTR(pszFile),
+                                              CComVariant(pszParameters ? pszParameters : L""),
+                                              CComVariant(workingDir),
+                                              CComVariant(L""),
+                                              CComVariant(SW_SHOWNORMAL));
+        if (result != S_OK)
+        {
+            Logger::warn(L"ShellExecuteW() failed. {}", GetErrorString(result));
+            return false;
+        }
 
         return true;
     }
@@ -198,7 +212,7 @@ inline bool drop_elevated_privileges()
     TOKEN_MANDATORY_LABEL label = { 0 };
     label.Label.Attributes = SE_GROUP_INTEGRITY;
     label.Label.Sid = medium_sid;
-    DWORD size = (DWORD)sizeof(TOKEN_MANDATORY_LABEL) + ::GetLengthSid(medium_sid);
+    DWORD size = static_cast<DWORD>(sizeof(TOKEN_MANDATORY_LABEL) + ::GetLengthSid(medium_sid));
 
     BOOL result = SetTokenInformation(token, TokenIntegrityLevel, &label, size);
     LocalFree(medium_sid);
@@ -207,8 +221,34 @@ inline bool drop_elevated_privileges()
     return result;
 }
 
+// Run command as different user, returns true if succeeded
+inline HANDLE run_as_different_user(const std::wstring& file, const std::wstring& params, const wchar_t* workingDir = nullptr, const bool showWindow = true)
+{
+    Logger::info(L"run_elevated with params={}", params);
+    SHELLEXECUTEINFOW exec_info = { 0 };
+    exec_info.cbSize = sizeof(SHELLEXECUTEINFOW);
+    exec_info.lpVerb = L"runAsUser";
+    exec_info.lpFile = file.c_str();
+    exec_info.lpParameters = params.c_str();
+    exec_info.hwnd = 0;
+    exec_info.fMask = SEE_MASK_NOCLOSEPROCESS;
+    exec_info.lpDirectory = workingDir;
+    exec_info.hInstApp = 0;
+    if (showWindow)
+    {
+        exec_info.nShow = SW_SHOWDEFAULT;
+    }
+    else
+    {
+        // might have limited success, but only option with ShellExecuteExW
+        exec_info.nShow = SW_HIDE;
+    }
+
+    return ShellExecuteExW(&exec_info) ? exec_info.hProcess : nullptr;
+}
+
 // Run command as elevated user, returns true if succeeded
-inline HANDLE run_elevated(const std::wstring& file, const std::wstring& params)
+inline HANDLE run_elevated(const std::wstring& file, const std::wstring& params, const wchar_t* workingDir = nullptr, const bool showWindow = true)
 {
     Logger::info(L"run_elevated with params={}", params);
     SHELLEXECUTEINFOW exec_info = { 0 };
@@ -218,15 +258,29 @@ inline HANDLE run_elevated(const std::wstring& file, const std::wstring& params)
     exec_info.lpParameters = params.c_str();
     exec_info.hwnd = 0;
     exec_info.fMask = SEE_MASK_NOCLOSEPROCESS;
-    exec_info.lpDirectory = 0;
+    exec_info.lpDirectory = workingDir;
     exec_info.hInstApp = 0;
-    exec_info.nShow = SW_SHOWDEFAULT;
 
-    return ShellExecuteExW(&exec_info) ? exec_info.hProcess : nullptr;
+    if (showWindow)
+    {
+        exec_info.nShow = SW_SHOWDEFAULT;
+    }
+    else
+    {
+        // might have limited success, but only option with ShellExecuteExW
+        exec_info.nShow = SW_HIDE;
+    }
+
+    BOOL result = ShellExecuteExW(&exec_info);
+
+    return result  ? exec_info.hProcess : nullptr;
 }
 
-// Run command as non-elevated user, returns true if succeeded, puts the process id into returnPid if returnPid != NULL
-inline bool run_non_elevated(const std::wstring& file, const std::wstring& params, DWORD* returnPid, const wchar_t* workingDir = nullptr)
+// The owning overload also supports validating the Explorer parent and inspecting a suspended child.
+inline bool run_non_elevated(const std::wstring& file, const std::wstring& params,
+                             wil::unique_process_information& result, const wchar_t* workingDir = nullptr,
+                             const bool showWindow = true, const bool startSuspended = false,
+                             const std::function<bool(HANDLE)>& validateParent = {})
 {
     Logger::info(L"run_non_elevated with params={}", params);
     auto executable_args = L"\"" + file + L"\"";
@@ -249,13 +303,24 @@ inline bool run_non_elevated(const std::wstring& file, const std::wstring& param
 
         return false;
     }
-    DWORD pid;
-    GetWindowThreadProcessId(hwnd, &pid);
+    DWORD pid = 0;
+    if (!GetWindowThreadProcessId(hwnd, &pid) || !pid)
+    {
+        Logger::error(L"Cannot determine the desktop shell process");
+        return false;
+    }
 
-    winrt::handle process{ OpenProcess(PROCESS_CREATE_PROCESS, FALSE, pid) };
+    winrt::handle process{ OpenProcess(PROCESS_CREATE_PROCESS | (validateParent ? PROCESS_QUERY_LIMITED_INFORMATION : 0), FALSE, pid) };
     if (!process)
     {
         Logger::error(L"OpenProcess() failed. {}", get_last_error_or_default(GetLastError()));
+        return false;
+    }
+
+    if (validateParent && !validateParent(process.get()))
+    {
+        Logger::error(L"Non-elevated process parent was rejected");
+        SetLastError(ERROR_ACCESS_DENIED);
         return false;
     }
 
@@ -275,6 +340,7 @@ inline bool run_non_elevated(const std::wstring& file, const std::wstring& param
         Logger::error(L"InitializeProcThreadAttributeList() failed. {}", get_last_error_or_default(GetLastError()));
         return false;
     }
+    auto releaseAttributes = wil::scope_exit([&] { DeleteProcThreadAttributeList(pptal); });
 
     HANDLE process_handle = process.get();
     if (!UpdateProcThreadAttribute(pptal,
@@ -289,36 +355,32 @@ inline bool run_non_elevated(const std::wstring& file, const std::wstring& param
         return false;
     }
 
-    STARTUPINFOEX siex = { 0 };
+    STARTUPINFOEXW siex = { 0 };
     siex.lpAttributeList = pptal;
     siex.StartupInfo.cb = sizeof(siex);
+    wil::unique_process_information pi;
+    DWORD dwCreationFlags = EXTENDED_STARTUPINFO_PRESENT | (startSuspended ? CREATE_SUSPENDED : 0);
 
-    PROCESS_INFORMATION pi = { 0 };
+    if (!showWindow)
+    {
+        siex.StartupInfo.dwFlags = STARTF_USESHOWWINDOW;
+        siex.StartupInfo.wShowWindow = SW_HIDE;
+        dwCreationFlags |= CREATE_NO_WINDOW;
+    }
+
     auto succeeded = CreateProcessW(file.c_str(),
-                                    const_cast<LPWSTR>(executable_args.c_str()),
+                                    &executable_args[0],
                                     nullptr,
                                     nullptr,
                                     FALSE,
-                                    EXTENDED_STARTUPINFO_PRESENT,
+                                    dwCreationFlags,
                                     nullptr,
                                     workingDir,
                                     &siex.StartupInfo,
                                     &pi);
     if (succeeded)
     {
-        if (pi.hProcess)
-        {
-            if (returnPid)
-            {
-                *returnPid = GetProcessId(pi.hProcess);
-            }
-
-            CloseHandle(pi.hProcess);
-        }
-        if (pi.hThread)
-        {
-            CloseHandle(pi.hThread);
-        }
+        result = std::move(pi);
     }
     else
     {
@@ -328,22 +390,35 @@ inline bool run_non_elevated(const std::wstring& file, const std::wstring& param
     return succeeded;
 }
 
+// Preserve the existing PID-only API and default launch behavior.
+inline bool run_non_elevated(const std::wstring& file, const std::wstring& params, DWORD* returnPid, const wchar_t* workingDir = nullptr, const bool showWindow = true)
+{
+    wil::unique_process_information process;
+    if (!run_non_elevated(file, params, process, workingDir, showWindow))
+        return false;
+    if (returnPid)
+        *returnPid = process.dwProcessId;
+    return true;
+}
+
 inline bool RunNonElevatedEx(const std::wstring& file, const std::wstring& params, const std::wstring& working_dir)
 {
+    bool success = false;
+    HRESULT co_init = E_FAIL;
     try
     {
-        CoInitialize(nullptr);
-        if (!ShellExecuteFromExplorer(file.c_str(), params.c_str(), working_dir.c_str()))
-        {
-            return false;
-        }
+        co_init = CoInitialize(nullptr);
+        success = ShellExecuteFromExplorer(file.c_str(), params.c_str(), working_dir.c_str());
     }
     catch (...)
     {
-        return false;
+    }
+    if (SUCCEEDED(co_init))
+    {
+        CoUninitialize();
     }
 
-    return true;
+    return success;
 }
 
 struct ProcessInfo
@@ -352,7 +427,7 @@ struct ProcessInfo
     DWORD processID = {};
 };
 
-inline std::optional<ProcessInfo> RunNonElevatedFailsafe(const std::wstring& file, const std::wstring& params, const std::wstring& working_dir)
+inline std::optional<ProcessInfo> RunNonElevatedFailsafe(const std::wstring& file, const std::wstring& params, const std::wstring& working_dir, DWORD handleAccess = 0)
 {
     bool launched = RunNonElevatedEx(file, params, working_dir);
     if (!launched)
@@ -372,7 +447,7 @@ inline std::optional<ProcessInfo> RunNonElevatedFailsafe(const std::wstring& fil
         }
     }
 
-    auto handles = getProcessHandlesByName(std::filesystem::path{ file }.filename().wstring(), PROCESS_QUERY_INFORMATION | SYNCHRONIZE);
+    auto handles = getProcessHandlesByName(std::filesystem::path{ file }.filename().wstring(), PROCESS_QUERY_INFORMATION | SYNCHRONIZE | handleAccess);
 
     if (handles.empty())
         return std::nullopt;
@@ -385,7 +460,7 @@ inline std::optional<ProcessInfo> RunNonElevatedFailsafe(const std::wstring& fil
 }
 
 // Run command with the same elevation, returns true if succeeded
-inline bool run_same_elevation(const std::wstring& file, const std::wstring& params, DWORD* returnPid)
+inline bool run_same_elevation(const std::wstring& file, const std::wstring& params, DWORD* returnPid, const wchar_t* workingDir = nullptr)
 {
     auto executable_args = L"\"" + file + L"\"";
     if (!params.empty())
@@ -395,14 +470,15 @@ inline bool run_same_elevation(const std::wstring& file, const std::wstring& par
 
     STARTUPINFO si = { sizeof(STARTUPINFO) };
     PROCESS_INFORMATION pi = { 0 };
+
     auto succeeded = CreateProcessW(file.c_str(),
-                                    const_cast<LPWSTR>(executable_args.c_str()),
+                                    &executable_args[0],
                                     nullptr,
                                     nullptr,
                                     FALSE,
                                     0,
                                     nullptr,
-                                    nullptr,
+                                    workingDir,
                                     &si,
                                     &pi);
 
@@ -464,7 +540,7 @@ inline bool check_user_is_admin()
     }
 
     // Allocate the buffer.
-    pGroupInfo = (PTOKEN_GROUPS)GlobalAlloc(GPTR, dwSize);
+    pGroupInfo = static_cast<PTOKEN_GROUPS>(GlobalAlloc(GPTR, dwSize));
 
     // Call GetTokenInformation again to get the group information.
     if (!GetTokenInformation(hToken, TokenGroups, pGroupInfo, dwSize, &dwSize))
@@ -491,5 +567,32 @@ inline bool check_user_is_admin()
     }
 
     freeMemory(pSID, pGroupInfo);
+    return false;
+}
+
+inline bool IsProcessOfWindowElevated(HWND window)
+{
+    DWORD pid = 0;
+    GetWindowThreadProcessId(window, &pid);
+    if (!pid)
+    {
+        return false;
+    }
+
+    wil::unique_handle hProcess{ OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,
+                                             FALSE,
+                                             pid) };
+
+    wil::unique_handle token;
+
+    if (OpenProcessToken(hProcess.get(), TOKEN_QUERY, &token))
+    {
+        TOKEN_ELEVATION elevation;
+        DWORD size;
+        if (GetTokenInformation(token.get(), TokenElevation, &elevation, sizeof(elevation), &size))
+        {
+            return elevation.TokenIsElevated != 0;
+        }
+    }
     return false;
 }

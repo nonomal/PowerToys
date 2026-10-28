@@ -4,20 +4,21 @@
 
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+
 using FancyZonesEditor.Utils;
 
 namespace FancyZonesEditor.ViewModels
 {
     public class MonitorViewModel : INotifyPropertyChanged
     {
-        private const int MaxPreviewDisplaySize = 160;
-        private const int MinPreviewDisplaySize = 98;
+        private const int MaxPreviewDisplaySize = 180;
+        private const int MinPreviewDisplaySize = 120;
 
         public event PropertyChangedEventHandler PropertyChanged;
 
         public delegate void MonitorChangedEvent(MonitorChangedEventArgs args);
 
-        public ObservableCollection<MonitorInfoModel> MonitorInfoForViewModel { get; set; }
+        public ObservableCollection<MonitorInfoModel> MonitorInfoForViewModel { get; } = new ObservableCollection<MonitorInfoModel>();
 
         public static double DesktopPreviewMultiplier { get; private set; }
 
@@ -27,7 +28,6 @@ namespace FancyZonesEditor.ViewModels
         {
             SelectCommand = new RelayCommand<MonitorInfoModel>(SelectCommandExecute, SelectCommandCanExecute);
 
-            MonitorInfoForViewModel = new ObservableCollection<MonitorInfoModel>();
             double maxDimension = 0, minDimension = double.MaxValue;
 
             int i = 1;

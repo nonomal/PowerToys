@@ -8,8 +8,8 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Windows.Forms;
+
 using Microsoft.PowerToys.PreviewHandler.Pdf;
-using Microsoft.PowerToys.STATestExtension;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Moq;
 
@@ -51,6 +51,7 @@ namespace PdfPreviewHandlerUnitTests
                 // Act
                 pdfPreviewHandlerControl.DoPreview(mockStream.Object);
                 var textBox = pdfPreviewHandlerControl.Controls[0] as RichTextBox;
+                Assert.IsNotNull(textBox);
 
                 // Assert
                 Assert.IsFalse(string.IsNullOrWhiteSpace(textBox.Text));

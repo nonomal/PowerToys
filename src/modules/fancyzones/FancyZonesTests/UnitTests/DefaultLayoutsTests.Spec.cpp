@@ -63,7 +63,7 @@ namespace FancyZonesUnitTests
                 .uuid = FancyZonesUtils::GuidFromString(L"{ACE817FD-2C51-4E13-903A-84CAB86FD17C}").value(),
                 .type = FancyZonesDataTypes::ZoneSetLayoutType::Custom
             };
-            Assert::IsTrue(horizontal == DefaultLayouts::instance().GetDefaultLayout(MonitorConfiguraionType::Horizontal));
+            Assert::IsTrue(horizontal == DefaultLayouts::instance().GetDefaultLayout(MonitorConfigurationType::Horizontal));
 
             LayoutData vertical{
                 .uuid = GUID_NULL,
@@ -73,7 +73,7 @@ namespace FancyZonesUnitTests
                 .zoneCount = 4,
                 .sensitivityRadius = 30
             };
-            Assert::IsTrue(vertical == DefaultLayouts::instance().GetDefaultLayout(MonitorConfiguraionType::Vertical));
+            Assert::IsTrue(vertical == DefaultLayouts::instance().GetDefaultLayout(MonitorConfigurationType::Vertical));
         }
 
             TEST_METHOD (DefaultLayoutsParseEmpty)
@@ -96,15 +96,21 @@ namespace FancyZonesUnitTests
                     .sensitivityRadius = DefaultValues::SensitivityRadius
                 };
 
-                Assert::IsTrue(priorityGrid == DefaultLayouts::instance().GetDefaultLayout(MonitorConfiguraionType::Horizontal));
-                Assert::IsTrue(priorityGrid == DefaultLayouts::instance().GetDefaultLayout(MonitorConfiguraionType::Vertical));
+                LayoutData rows{
+                    .uuid = GUID_NULL,
+                    .type = FancyZonesDataTypes::ZoneSetLayoutType::Rows,
+                    .showSpacing = DefaultValues::ShowSpacing,
+                    .spacing = DefaultValues::Spacing,
+                    .zoneCount = DefaultValues::ZoneCount,
+                    .sensitivityRadius = DefaultValues::SensitivityRadius
+                };
+
+                Assert::IsTrue(priorityGrid == DefaultLayouts::instance().GetDefaultLayout(MonitorConfigurationType::Horizontal));
+                Assert::IsTrue(rows == DefaultLayouts::instance().GetDefaultLayout(MonitorConfigurationType::Vertical));
             }
 
             TEST_METHOD (DefaultLayoutsNoFile)
             {
-                // test
-                DefaultLayouts::instance().LoadData();
-
                 LayoutData priorityGrid{
                     .uuid = GUID_NULL,
                     .type = FancyZonesDataTypes::ZoneSetLayoutType::PriorityGrid,
@@ -114,8 +120,20 @@ namespace FancyZonesUnitTests
                     .sensitivityRadius = DefaultValues::SensitivityRadius
                 };
 
-                Assert::IsTrue(priorityGrid == DefaultLayouts::instance().GetDefaultLayout(MonitorConfiguraionType::Horizontal));
-                Assert::IsTrue(priorityGrid == DefaultLayouts::instance().GetDefaultLayout(MonitorConfiguraionType::Vertical));
+                LayoutData rows{
+                    .uuid = GUID_NULL,
+                    .type = FancyZonesDataTypes::ZoneSetLayoutType::Rows,
+                    .showSpacing = DefaultValues::ShowSpacing,
+                    .spacing = DefaultValues::Spacing,
+                    .zoneCount = DefaultValues::ZoneCount,
+                    .sensitivityRadius = DefaultValues::SensitivityRadius
+                };
+
+                // test
+                DefaultLayouts::instance().LoadData();
+
+                Assert::IsTrue(priorityGrid == DefaultLayouts::instance().GetDefaultLayout(MonitorConfigurationType::Horizontal));
+                Assert::IsTrue(rows == DefaultLayouts::instance().GetDefaultLayout(MonitorConfigurationType::Vertical));
             }
     };
 }

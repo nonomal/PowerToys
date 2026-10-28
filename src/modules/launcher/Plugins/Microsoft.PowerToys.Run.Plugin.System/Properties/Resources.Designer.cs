@@ -19,7 +19,7 @@ namespace Microsoft.PowerToys.Run.Plugin.System.Properties {
     // class via a tool like ResGen or Visual Studio.
     // To add or remove a member, edit your .ResX file then rerun ResGen
     // with the /str option, or rebuild your VS project.
-    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("System.Resources.Tools.StronglyTypedResourceBuilder", "17.0.0.0")]
+    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("System.Resources.Tools.StronglyTypedResourceBuilder", "18.0.0.0")]
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute()]
     internal class Resources {
@@ -165,24 +165,6 @@ namespace Microsoft.PowerToys.Run.Plugin.System.Properties {
         internal static string Microsoft_plugin_sys_Dns {
             get {
                 return ResourceManager.GetString("Microsoft_plugin_sys_Dns", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Empty Recycle Bin.
-        /// </summary>
-        internal static string Microsoft_plugin_sys_emptyrecyclebin {
-            get {
-                return ResourceManager.GetString("Microsoft_plugin_sys_emptyrecyclebin", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Empty Recycle Bin.
-        /// </summary>
-        internal static string Microsoft_plugin_sys_emptyrecyclebin_description {
-            get {
-                return ResourceManager.GetString("Microsoft_plugin_sys_emptyrecyclebin_description", resourceCulture);
             }
         }
         
@@ -385,7 +367,7 @@ namespace Microsoft.PowerToys.Run.Plugin.System.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Executes system commands (e.g. &apos;shutdown&apos;, &apos;lock&apos;, &apos;sleep&apos;)..
+        ///   Looks up a localized string similar to Executes system commands (e.g. &apos;shutdown&apos;, &apos;lock&apos;, &apos;sleep&apos;).
         /// </summary>
         internal static string Microsoft_plugin_sys_plugin_description {
             get {
@@ -399,6 +381,123 @@ namespace Microsoft.PowerToys.Run.Plugin.System.Properties {
         internal static string Microsoft_plugin_sys_plugin_name {
             get {
                 return ResourceManager.GetString("Microsoft_plugin_sys_plugin_name", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Recycle Bin.
+        /// </summary>
+        internal static string Microsoft_plugin_sys_RecycleBin {
+            get {
+                return ResourceManager.GetString("Microsoft_plugin_sys_RecycleBin", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Empty Recycle Bin (Shift+Delete).
+        /// </summary>
+        internal static string Microsoft_plugin_sys_RecycleBin_contextMenu {
+            get {
+                return ResourceManager.GetString("Microsoft_plugin_sys_RecycleBin_contextMenu", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Open the Recycle Bin.
+        /// </summary>
+        internal static string Microsoft_plugin_sys_RecycleBin_description {
+            get {
+                return ResourceManager.GetString("Microsoft_plugin_sys_RecycleBin_description", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Recycle Bin emptied successfully..
+        /// </summary>
+        internal static string Microsoft_plugin_sys_RecycleBin_EmptySuccessMessage {
+            get {
+                return ResourceManager.GetString("Microsoft_plugin_sys_RecycleBin_EmptySuccessMessage", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The task to empty the Recycle Bin is already running..
+        /// </summary>
+        internal static string Microsoft_plugin_sys_RecycleBin_EmptyTaskRunning {
+            get {
+                return ResourceManager.GetString("Microsoft_plugin_sys_RecycleBin_EmptyTaskRunning", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Failed to empty the Recycle Bin:.
+        /// </summary>
+        internal static string Microsoft_plugin_sys_RecycleBin_ErrorMsg {
+            get {
+                return ResourceManager.GetString("Microsoft_plugin_sys_RecycleBin_ErrorMsg", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Recycle Bin is empty..
+        /// </summary>
+        internal static string Microsoft_plugin_sys_RecycleBin_IsEmpty {
+            get {
+                return ResourceManager.GetString("Microsoft_plugin_sys_RecycleBin_IsEmpty", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Empty Recycle Bin.
+        /// </summary>
+        internal static string Microsoft_plugin_sys_RecycleBin_searchTag {
+            get {
+                return ResourceManager.GetString("Microsoft_plugin_sys_RecycleBin_searchTag", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Show separate result for Empty Recycle Bin command.
+        /// </summary>
+        internal static string Microsoft_plugin_sys_RecycleBin_ShowEmptySeparate {
+            get {
+                return ResourceManager.GetString("Microsoft_plugin_sys_RecycleBin_ShowEmptySeparate", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Show a success message after emptying the Recycle Bin.
+        /// </summary>
+        internal static string Microsoft_plugin_sys_RecycleBin_ShowEmptySuccessMessage {
+            get {
+                return ResourceManager.GetString("Microsoft_plugin_sys_RecycleBin_ShowEmptySuccessMessage", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Empty Recycle Bin.
+        /// </summary>
+        internal static string Microsoft_plugin_sys_RecycleBinEmpty_description {
+            get {
+                return ResourceManager.GetString("Microsoft_plugin_sys_RecycleBinEmpty_description", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Empty Recycle Bin.
+        /// </summary>
+        internal static string Microsoft_plugin_sys_RecycleBinEmptyResult {
+            get {
+                return ResourceManager.GetString("Microsoft_plugin_sys_RecycleBinEmptyResult", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Open Recycle Bin.
+        /// </summary>
+        internal static string Microsoft_plugin_sys_RecycleBinOpen {
+            get {
+                return ResourceManager.GetString("Microsoft_plugin_sys_RecycleBinOpen", resourceCulture);
             }
         }
         
@@ -583,7 +682,7 @@ namespace Microsoft.PowerToys.Run.Plugin.System.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to You are about to reboot this computer into UEFI Firmware Settings menu, are you sure?.
+        ///   Looks up a localized string similar to You are about to reboot this computer into UEFI firmware settings menu, are you sure?.
         /// </summary>
         internal static string Microsoft_plugin_sys_uefi_confirmation {
             get {
@@ -592,7 +691,7 @@ namespace Microsoft.PowerToys.Run.Plugin.System.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Reboot computer into UEFI Firmware Settings (Requires administrative permissions.).
+        ///   Looks up a localized string similar to Reboot computer into UEFI firmware settings (Requires administrative permissions.).
         /// </summary>
         internal static string Microsoft_plugin_sys_uefi_description {
             get {

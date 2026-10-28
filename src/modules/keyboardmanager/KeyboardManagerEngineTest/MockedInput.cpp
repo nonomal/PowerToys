@@ -10,15 +10,21 @@ void MockedInput::SetHookProc(std::function<intptr_t(LowlevelKeyboardEvent*)> ho
 }
 
 // Function to simulate keyboard input - arguments and return value based on SendInput function (https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-sendinput)
-UINT MockedInput::SendVirtualInput(UINT cInputs, LPINPUT pInputs, int /*cbSize*/)
+bool MockedInput::SendVirtualInput(const std::vector<INPUT>& inputs)
 {
-    // Iterate over inputs
-    for (UINT i = 0; i < cInputs; i++)
+    // Simulate an injection failure (e.g. SendInput blocked) when configured.
+    if (sendVirtualInputShouldFail != nullptr && sendVirtualInputShouldFail(inputs))
     {
-        LowlevelKeyboardEvent keyEvent;
+        return false;
+    }
+
+    // Iterate over inputs
+    for (const INPUT& input : inputs)
+    {
+        LowlevelKeyboardEvent keyEvent{};
 
         // Distinguish between key and sys key by checking if the key is either F10 (for syskeydown) or if the key message is sent while Alt is held down. SYSKEY messages are also sent if there is no window in focus, but that has not been mocked since it would require many changes. More details on key messages at https://learn.microsoft.com/windows/win32/inputdev/wm-syskeydown
-        if (pInputs[i].ki.dwFlags & KEYEVENTF_KEYUP)
+        if (input.ki.dwFlags & KEYEVENTF_KEYUP)
         {
             if (keyboardState[VK_MENU] == true)
             {
@@ -31,7 +37,7 @@ UINT MockedInput::SendVirtualInput(UINT cInputs, LPINPUT pInputs, int /*cbSize*/
         }
         else
         {
-            if (pInputs[i].ki.wVk == VK_F10 || keyboardState[VK_MENU] == true)
+            if (input.ki.wVk == VK_F10 || keyboardState[VK_MENU] == true)
             {
                 keyEvent.wParam = WM_SYSKEYDOWN;
             }
@@ -43,8 +49,8 @@ UINT MockedInput::SendVirtualInput(UINT cInputs, LPINPUT pInputs, int /*cbSize*/
         KBDLLHOOKSTRUCT lParam = {};
 
         // Set only vkCode and dwExtraInfo since other values are unused
-        lParam.vkCode = pInputs[i].ki.wVk;
-        lParam.dwExtraInfo = pInputs[i].ki.dwExtraInfo;
+        lParam.vkCode = input.ki.wVk;
+        lParam.dwExtraInfo = input.ki.dwExtraInfo;
         keyEvent.lParam = &lParam;
 
         // If the SendVirtualInput call condition is true, increment the count. If no condition is set then always increment the count
@@ -60,55 +66,54 @@ UINT MockedInput::SendVirtualInput(UINT cInputs, LPINPUT pInputs, int /*cbSize*/
         if (result == 0)
         {
             // If key up flag is set, then set keyboard state to false
-            keyboardState[pInputs[i].ki.wVk] = (pInputs[i].ki.dwFlags & KEYEVENTF_KEYUP) ? false : true;
+            keyboardState[input.ki.wVk] = (input.ki.dwFlags & KEYEVENTF_KEYUP) ? false : true;
 
             // Handling modifier key codes
-            switch (pInputs[i].ki.wVk)
+            switch (input.ki.wVk)
             {
             case VK_CONTROL:
-                if (pInputs[i].ki.dwFlags & KEYEVENTF_KEYUP)
+                if (input.ki.dwFlags & KEYEVENTF_KEYUP)
                 {
                     keyboardState[VK_LCONTROL] = false;
                     keyboardState[VK_RCONTROL] = false;
                 }
                 break;
             case VK_LCONTROL:
-                keyboardState[VK_CONTROL] = (pInputs[i].ki.dwFlags & KEYEVENTF_KEYUP) ? false : true;
+                keyboardState[VK_CONTROL] = (input.ki.dwFlags & KEYEVENTF_KEYUP) ? false : true;
                 break;
             case VK_RCONTROL:
-                keyboardState[VK_CONTROL] = (pInputs[i].ki.dwFlags & KEYEVENTF_KEYUP) ? false : true;
+                keyboardState[VK_CONTROL] = (input.ki.dwFlags & KEYEVENTF_KEYUP) ? false : true;
                 break;
             case VK_MENU:
-                if (pInputs[i].ki.dwFlags & KEYEVENTF_KEYUP)
+                if (input.ki.dwFlags & KEYEVENTF_KEYUP)
                 {
                     keyboardState[VK_LMENU] = false;
                     keyboardState[VK_RMENU] = false;
                 }
                 break;
             case VK_LMENU:
-                keyboardState[VK_MENU] = (pInputs[i].ki.dwFlags & KEYEVENTF_KEYUP) ? false : true;
+                keyboardState[VK_MENU] = (input.ki.dwFlags & KEYEVENTF_KEYUP) ? false : true;
                 break;
             case VK_RMENU:
-                keyboardState[VK_MENU] = (pInputs[i].ki.dwFlags & KEYEVENTF_KEYUP) ? false : true;
+                keyboardState[VK_MENU] = (input.ki.dwFlags & KEYEVENTF_KEYUP) ? false : true;
                 break;
             case VK_SHIFT:
-                if (pInputs[i].ki.dwFlags & KEYEVENTF_KEYUP)
+                if (input.ki.dwFlags & KEYEVENTF_KEYUP)
                 {
                     keyboardState[VK_LSHIFT] = false;
                     keyboardState[VK_RSHIFT] = false;
                 }
                 break;
             case VK_LSHIFT:
-                keyboardState[VK_SHIFT] = (pInputs[i].ki.dwFlags & KEYEVENTF_KEYUP) ? false : true;
+                keyboardState[VK_SHIFT] = (input.ki.dwFlags & KEYEVENTF_KEYUP) ? false : true;
                 break;
             case VK_RSHIFT:
-                keyboardState[VK_SHIFT] = (pInputs[i].ki.dwFlags & KEYEVENTF_KEYUP) ? false : true;
+                keyboardState[VK_SHIFT] = (input.ki.dwFlags & KEYEVENTF_KEYUP) ? false : true;
                 break;
             }
         }
     }
-
-    return cInputs;
+    return true;
 }
 
 // Function to simulate keyboard hook behavior
@@ -131,6 +136,12 @@ bool MockedInput::GetVirtualKeyState(int key)
     return keyboardState[key];
 }
 
+// Function to set the state of a particular key for test setup
+void MockedInput::SetKeyboardState(int key, bool state)
+{
+    keyboardState[key] = state;
+}
+
 // Function to reset the mocked keyboard state
 void MockedInput::ResetKeyboardState()
 {
@@ -142,6 +153,12 @@ void MockedInput::SetSendVirtualInputTestHandler(std::function<bool(LowlevelKeyb
 {
     sendVirtualInputCallCount = 0;
     sendVirtualInputCallCondition = condition;
+}
+
+// Function to force SendVirtualInput to fail for calls matching a predicate
+void MockedInput::SetSendVirtualInputShouldFail(std::function<bool(const std::vector<INPUT>&)> condition)
+{
+    sendVirtualInputShouldFail = condition;
 }
 
 // Function to get SendVirtualInput call count

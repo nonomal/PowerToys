@@ -1,7 +1,7 @@
 ﻿#pragma once
 
 #include "KeyboardListener.g.h"
-
+#include <mutex>
 #include <spdlog/stopwatch.h>
 
 namespace winrt::PowerToys::PowerAccentKeyboardService::implementation
@@ -11,12 +11,15 @@ namespace winrt::PowerToys::PowerAccentKeyboardService::implementation
         LeftRightArrow,
         Space,
         Both,
+        PressAndHold,
     };
 
     struct PowerAccentSettings
     {
         PowerAccentActivationKey activationKey{ PowerAccentActivationKey::Both };
-        std::chrono::milliseconds inputTime{ 200 };
+        bool doNotActivateOnGameMode{ true };
+        std::chrono::milliseconds inputTime{ 300 }; // Should match with UI.Library.PowerAccentSettings.DefaultInputTimeMs
+        std::chrono::milliseconds holdDuration{ 500 }; // Should match with UI.Library.PowerAccentSettings.DefaultHoldDurationMs
         std::vector<std::wstring> excludedApps;
     };
 
@@ -28,39 +31,58 @@ namespace winrt::PowerToys::PowerAccentKeyboardService::implementation
 
         KeyboardListener();
 
-        void KeyboardListener::InitHook();
-        void KeyboardListener::UnInitHook();
+        void InitHook();
+        void UnInitHook();
         void SetShowToolbarEvent(ShowToolbar showToolbarEvent);
+        void SetCancelToolbarEvent(CancelToolbar cancelToolbarEvent);
         void SetHideToolbarEvent(HideToolbar hideToolbarEvent);
         void SetNextCharEvent(NextChar NextCharEvent);
         void SetIsLanguageLetterDelegate(IsLanguageLetter IsLanguageLetterDelegate);
 
+        void UpdateActivationSettings(int32_t activationKey, int32_t inputTime, int32_t holdDuration);
         void UpdateActivationKey(int32_t activationKey);
+        void UpdateDoNotActivateOnGameMode(bool doNotActivateOnGameMode);
         void UpdateInputTime(int32_t inputTime);
+        void UpdateHoldDuration(int32_t holdDuration);
         void UpdateExcludedApps(std::wstring_view excludedApps);
 
+        void ForceReset();
+
         static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam);
+        static void CALLBACK ForegroundEventProc(HWINEVENTHOOK hook, DWORD event, HWND hwnd, LONG idObject, LONG idChild, DWORD dwEventThread, DWORD dwmsEventTime) noexcept;
 
     private:
         bool OnKeyDown(KBDLLHOOKSTRUCT info) noexcept;
         bool OnKeyUp(KBDLLHOOKSTRUCT info) noexcept;
+        bool IsSuppressedByGameMode();
         bool IsForegroundAppExcluded();
+        bool IsBlockingModifierDown();
 
         static inline KeyboardListener* s_instance;
         HHOOK s_llKeyboardHook = nullptr;
+        HWINEVENTHOOK s_foregroundEventHook = nullptr;
         bool m_toolbarVisible;
+        HWND m_toolbarForegroundWindow = nullptr;
         PowerAccentSettings m_settings;
-        std::function<void(LetterKey)> m_showToolbarCb;
+        std::function<void(LetterKey, int32_t)> m_showToolbarCb;
+        std::function<void()> m_cancelToolbarCb;
         std::function<void(InputType)> m_hideToolbarCb;
         std::function<void(TriggerKey, bool)> m_nextCharCb;
         std::function<bool(LetterKey)> m_isLanguageLetterCb;
         bool m_triggeredWithSpace;
+        bool m_triggeredWithLeftArrow;
+        bool m_triggeredWithRightArrow;
         spdlog::stopwatch m_stopwatch;
         bool m_leftShiftPressed;
         bool m_rightShiftPressed;
+        bool m_pressAndHoldCancelled;
+        PowerAccentActivationKey m_gestureActivationKey{ PowerAccentActivationKey::Both };
+        std::chrono::milliseconds m_gestureInputTime{ 300 };
+        std::chrono::milliseconds m_gestureHoldDuration{ 500 };
 
         std::mutex m_mutex_excluded_apps;
-        std::pair<HWND, bool> m_prevForegrndAppExcl{ NULL, false };
+        std::mutex m_mutex_activation_settings;
+        std::pair<HWND, bool> m_prevForegroundAppExcl{ NULL, false };
 
         static inline const std::vector<LetterKey> letters = { LetterKey::VK_0,
                                                                LetterKey::VK_1,
@@ -98,7 +120,14 @@ namespace winrt::PowerToys::PowerAccentKeyboardService::implementation
                                                                LetterKey::VK_X,
                                                                LetterKey::VK_Y,
                                                                LetterKey::VK_Z,
-                                                               LetterKey::VK_COMMA };
+                                                               LetterKey::VK_PLUS,
+                                                               LetterKey::VK_COMMA,
+                                                               LetterKey::VK_PERIOD,
+                                                               LetterKey::VK_MINUS,
+                                                               LetterKey::VK_SLASH_,
+                                                               LetterKey::VK_DIVIDE_,
+                                                               LetterKey::VK_MULTIPLY_,
+                                                               LetterKey::VK_BACKSLASH, };
         LetterKey letterPressed{};
 
         static inline const std::vector<TriggerKey> triggers = { TriggerKey::Right, TriggerKey::Left, TriggerKey::Space };

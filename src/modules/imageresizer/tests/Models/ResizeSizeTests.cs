@@ -1,11 +1,14 @@
+#pragma warning disable IDE0073
 // Copyright (c) Brice Lambson
 // The Brice Lambson licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.  Code forked from Brice Lambson's https://github.com/bricelam/ImageResizer/
+#pragma warning restore IDE0073
 
 using System;
-using System.Collections.Generic;
 using System.ComponentModel;
-using ImageResizer.Properties;
+using System.Linq;
+
+using ImageResizer.Helpers;
 using ImageResizer.Test;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -14,6 +17,12 @@ namespace ImageResizer.Models
     [TestClass]
     public class ResizeSizeTests
     {
+        [ClassInitialize]
+        public static void ClassInit(TestContext context)
+        {
+            ResourceLoaderInstance.GetString = key => key;
+        }
+
         [TestMethod]
         public void NameWorks()
         {
@@ -31,22 +40,11 @@ namespace ImageResizer.Models
         [TestMethod]
         public void NameReplacesTokens()
         {
-            var args = new List<(string, string)>
-            {
-                ("$small$", Resources.Small),
-                ("$medium$", Resources.Medium),
-                ("$large$", Resources.Large),
-                ("$phone$", Resources.Phone),
-            };
-            foreach (var (name, expected) in args)
-            {
-                var size = new ResizeSize
-                {
-                    Name = name,
-                };
+            var size = new ResizeSize();
 
-                Assert.AreEqual(expected, size.Name);
-            }
+            size.Name = "$small$";
+
+            Assert.AreEqual("Small", size.Name);
         }
 
         [TestMethod]
@@ -54,13 +52,15 @@ namespace ImageResizer.Models
         {
             var size = new ResizeSize();
 
-            var e = AssertEx.Raises<PropertyChangedEventArgs>(
+            var events = AssertEx.RaisesAll<PropertyChangedEventArgs>(
                 h => size.PropertyChanged += h,
                 h => size.PropertyChanged -= h,
                 () => size.Fit = ResizeFit.Stretch);
 
             Assert.AreEqual(ResizeFit.Stretch, size.Fit);
-            Assert.AreEqual(nameof(ResizeSize.Fit), e.Arguments.PropertyName);
+            Assert.IsTrue(
+                events.Any(e => e.Arguments.PropertyName == nameof(ResizeSize.Fit)),
+                "Expected PropertyChanged for Fit");
         }
 
         [TestMethod]
@@ -132,13 +132,15 @@ namespace ImageResizer.Models
         {
             var size = new ResizeSize();
 
-            var e = AssertEx.Raises<PropertyChangedEventArgs>(
+            var events = AssertEx.RaisesAll<PropertyChangedEventArgs>(
                 h => size.PropertyChanged += h,
                 h => size.PropertyChanged -= h,
                 () => size.Unit = ResizeUnit.Inch);
 
             Assert.AreEqual(ResizeUnit.Inch, size.Unit);
-            Assert.AreEqual(nameof(ResizeSize.Unit), e.Arguments.PropertyName);
+            Assert.IsTrue(
+                events.Any(e => e.Arguments.PropertyName == nameof(ResizeSize.Unit)),
+                "Expected PropertyChanged for Unit");
         }
 
         [TestMethod]

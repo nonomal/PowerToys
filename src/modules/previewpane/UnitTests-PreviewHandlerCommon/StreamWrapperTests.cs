@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
+
 using Common.Utilities;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Moq;
@@ -20,13 +21,13 @@ namespace PreviewHandlerCommonUnitTests
         public void StreamWrapperShouldThrowIfInitializeWithNullStream()
         {
             // Arrange
-            IStream stream = null;
-            ArgumentNullException exception = null;
+            IStream? stream = null;
+            ArgumentNullException? exception = null;
 
             // Act
             try
             {
-                using (var streamWrapper = new ReadonlyStream(stream))
+                using (var streamWrapper = new ReadonlyStream(stream!))
                 {
                     // do work
                 }
@@ -207,7 +208,7 @@ namespace PreviewHandlerCommonUnitTests
                 var actualPosition = streamWrapper.Seek(0, SeekOrigin.Begin);
 
                 // Assert
-                Assert.AreEqual(actualPosition, position);
+                Assert.AreEqual(position, actualPosition);
             }
         }
 
@@ -221,7 +222,7 @@ namespace PreviewHandlerCommonUnitTests
             // Arrange
             var buffer = new byte[bufferLength];
             var streamMock = new Mock<IStream>();
-            ArgumentOutOfRangeException exception = null;
+            ArgumentOutOfRangeException? exception = null;
 
             using (var streamWrapper = new ReadonlyStream(streamMock.Object))
             {
@@ -282,7 +283,7 @@ namespace PreviewHandlerCommonUnitTests
             var streamMock = new Mock<IStream>();
             using (var streamWrapper = new ReadonlyStream(streamMock.Object))
             {
-                NotImplementedException exception = null;
+                NotImplementedException? exception = null;
 
                 // Act
                 try
@@ -306,7 +307,7 @@ namespace PreviewHandlerCommonUnitTests
             var streamMock = new Mock<IStream>();
             using (var streamWrapper = new ReadonlyStream(streamMock.Object))
             {
-                NotImplementedException exception = null;
+                NotImplementedException? exception = null;
 
                 // Act
                 try
@@ -330,7 +331,7 @@ namespace PreviewHandlerCommonUnitTests
             var streamMock = new Mock<IStream>();
             using (var streamWrapper = new ReadonlyStream(streamMock.Object))
             {
-                NotImplementedException exception = null;
+                NotImplementedException? exception = null;
 
                 // Act
                 try

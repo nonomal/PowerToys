@@ -6,13 +6,21 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using ManagedCommon;
+using Microsoft.PowerToys.Settings.UI.Library.Helpers;
 using Microsoft.PowerToys.Settings.UI.Library.Interfaces;
 
 namespace Microsoft.PowerToys.Settings.UI.Library
 {
-    public class PowerLauncherSettings : BasePTModuleSettings, ISettingsConfig
+    public class PowerLauncherSettings : BasePTModuleSettings, ISettingsConfig, IHotkeyConfig
     {
         public const string ModuleName = "PowerToys Run";
+
+        private static readonly JsonSerializerOptions _serializerOptions = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        };
 
         [JsonPropertyName("properties")]
         public PowerLauncherProperties Properties { get; set; }
@@ -27,18 +35,12 @@ namespace Microsoft.PowerToys.Settings.UI.Library
             Name = ModuleName;
         }
 
-        public virtual void Save(ISettingsUtils settingsUtils)
+        public virtual void Save(SettingsUtils settingsUtils)
         {
             // Save settings to file
-            var options = new JsonSerializerOptions
-            {
-                WriteIndented = true,
-            };
+            var options = _serializerOptions;
 
-            if (settingsUtils == null)
-            {
-                throw new ArgumentNullException(nameof(settingsUtils));
-            }
+            ArgumentNullException.ThrowIfNull(settingsUtils);
 
             settingsUtils.SaveSettings(JsonSerializer.Serialize(this, options), ModuleName);
         }
@@ -46,6 +48,21 @@ namespace Microsoft.PowerToys.Settings.UI.Library
         public string GetModuleName()
         {
             return Name;
+        }
+
+        public ModuleType GetModuleType() => ModuleType.PowerLauncher;
+
+        public HotkeyAccessor[] GetAllHotkeyAccessors()
+        {
+            var hotkeyAccessors = new List<HotkeyAccessor>
+            {
+                new HotkeyAccessor(
+                    () => Properties.OpenPowerLauncher,
+                    value => Properties.OpenPowerLauncher = value ?? Properties.DefaultOpenPowerLauncher,
+                    "PowerLauncher_OpenPowerLauncher"),
+            };
+
+            return hotkeyAccessors.ToArray();
         }
 
         // This can be utilized in the future if the settings.json file is to be modified/deleted.

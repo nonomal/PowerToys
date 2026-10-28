@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information.
 
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -10,12 +11,18 @@ using global::PowerToys.GPOWrapper;
 using Microsoft.PowerToys.Settings.UI.Library;
 using Microsoft.PowerToys.Settings.UI.Library.Helpers;
 using Microsoft.PowerToys.Settings.UI.Library.Interfaces;
+using Microsoft.PowerToys.Settings.UI.SerializationContext;
 
 namespace Microsoft.PowerToys.Settings.UI.ViewModels
 {
-    public class MeasureToolViewModel : Observable
+    public partial class MeasureToolViewModel : PageViewModelBase
     {
-        private ISettingsUtils SettingsUtils { get; set; }
+        private const int DefaultUnitsOfMeasureIndex = 0;
+        internal const int MaximumUnitsOfMeasureIndex = 4;
+
+        protected override string ModuleName => MeasureToolSettings.ModuleName;
+
+        private SettingsUtils SettingsUtils { get; set; }
 
         private GeneralSettings GeneralSettingsConfig { get; set; }
 
@@ -25,17 +32,31 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
 
         private MeasureToolSettings Settings { get; set; }
 
-        public MeasureToolViewModel(ISettingsUtils settingsUtils, ISettingsRepository<GeneralSettings> settingsRepository, ISettingsRepository<MeasureToolSettings> measureToolSettingsRepository, Func<string, int> ipcMSGCallBackFunc)
+        public MeasureToolViewModel(SettingsUtils settingsUtils, ISettingsRepository<GeneralSettings> settingsRepository, ISettingsRepository<MeasureToolSettings> measureToolSettingsRepository, Func<string, int> ipcMSGCallBackFunc)
         {
             SettingsUtils = settingsUtils;
 
-            if (settingsRepository == null)
-            {
-                throw new ArgumentNullException(nameof(settingsRepository));
-            }
+            ArgumentNullException.ThrowIfNull(settingsRepository);
 
             GeneralSettingsConfig = settingsRepository.SettingsConfig;
 
+            InitializeEnabledValue();
+
+            ArgumentNullException.ThrowIfNull(measureToolSettingsRepository);
+
+            Settings = measureToolSettingsRepository.SettingsConfig;
+            int normalizedUnitsOfMeasure = NormalizeUnitsOfMeasureIndex(Settings.Properties.UnitsOfMeasure.Value);
+            if (normalizedUnitsOfMeasure != Settings.Properties.UnitsOfMeasure.Value)
+            {
+                Settings.Properties.UnitsOfMeasure.Value = normalizedUnitsOfMeasure;
+                SettingsUtils.SaveSettings(Settings.ToJsonString(), MeasureToolSettings.ModuleName);
+            }
+
+            SendConfigMSG = ipcMSGCallBackFunc;
+        }
+
+        private void InitializeEnabledValue()
+        {
             _enabledGpoRuleConfiguration = GPOWrapper.GetConfiguredScreenRulerEnabledValue();
             if (_enabledGpoRuleConfiguration == GpoRuleConfigured.Disabled || _enabledGpoRuleConfiguration == GpoRuleConfigured.Enabled)
             {
@@ -47,15 +68,16 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             {
                 _isEnabled = GeneralSettingsConfig.Enabled.MeasureTool;
             }
+        }
 
-            if (measureToolSettingsRepository == null)
+        public override Dictionary<string, HotkeySettings[]> GetAllHotkeySettings()
+        {
+            var hotkeysDict = new Dictionary<string, HotkeySettings[]>
             {
-                throw new ArgumentNullException(nameof(measureToolSettingsRepository));
-            }
+                [ModuleName] = [ActivationShortcut],
+            };
 
-            Settings = measureToolSettingsRepository.SettingsConfig;
-
-            SendConfigMSG = ipcMSGCallBackFunc;
+            return hotkeysDict;
         }
 
         public bool IsEnabled
@@ -163,11 +185,12 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
         {
             get
             {
-                return Settings.Properties.UnitsOfMeasure.Value;
+                return NormalizeUnitsOfMeasureIndex(Settings.Properties.UnitsOfMeasure.Value);
             }
 
             set
             {
+                value = NormalizeUnitsOfMeasureIndex(value);
                 if (Settings.Properties.UnitsOfMeasure.Value != value)
                 {
                     Settings.Properties.UnitsOfMeasure.Value = value;
@@ -204,7 +227,7 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             {
                 if (Settings.Properties.ActivationShortcut != value)
                 {
-                    Settings.Properties.ActivationShortcut = value;
+                    Settings.Properties.ActivationShortcut = value ?? Settings.Properties.DefaultActivationShortcut;
 
                     NotifyPropertyChanged();
 
@@ -213,7 +236,24 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
                          CultureInfo.InvariantCulture,
                          "{{ \"powertoys\": {{ \"{0}\": {1} }} }}",
                          MeasureToolSettings.ModuleName,
-                         JsonSerializer.Serialize(Settings)));
+                         JsonSerializer.Serialize(Settings, SourceGenerationContextContext.Default.MeasureToolSettings)));
+                }
+            }
+        }
+
+        public int DefaultMeasureStyle
+        {
+            get
+            {
+                return Settings.Properties.DefaultMeasureStyle.Value;
+            }
+
+            set
+            {
+                if (Settings.Properties.DefaultMeasureStyle.Value != value)
+                {
+                    Settings.Properties.DefaultMeasureStyle.Value = value;
+                    NotifyPropertyChanged();
                 }
             }
         }
@@ -230,9 +270,27 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             SettingsUtils.SaveSettings(Settings.ToJsonString(), MeasureToolSettings.ModuleName);
         }
 
+        public void RefreshEnabledState()
+        {
+            InitializeEnabledValue();
+            OnPropertyChanged(nameof(IsEnabled));
+            OnPropertyChanged(nameof(ShowContinuousCaptureWarning));
+        }
+
         public bool ShowContinuousCaptureWarning
         {
             get => IsEnabled && ContinuousCapture;
+        }
+
+        internal static int NormalizeUnitsOfMeasureIndex(int value)
+        {
+            return value switch
+            {
+                // Legacy enum migration (pre-ComboBox builds stored Millimetres as 8).
+                8 => 3,
+                >= DefaultUnitsOfMeasureIndex and <= MaximumUnitsOfMeasureIndex => value,
+                _ => DefaultUnitsOfMeasureIndex,
+            };
         }
 
         private Func<string, int> SendConfigMSG { get; }

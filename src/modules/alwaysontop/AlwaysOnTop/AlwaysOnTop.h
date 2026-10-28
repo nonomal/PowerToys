@@ -9,11 +9,13 @@
 #include <WindowBorder.h>
 
 #include <common/hooks/WinHookEvent.h>
+#include <common/notifications/NotificationUtil.h>
+#include <common/utils/window.h>
 
 class AlwaysOnTop : public SettingsObserver
 {
 public:
-    AlwaysOnTop(bool useLLKH);
+    AlwaysOnTop(bool useLLKH, DWORD mainThreadId);
     ~AlwaysOnTop();
 
 protected:
@@ -24,7 +26,7 @@ protected:
         if (!thisRef && (message == WM_CREATE))
         {
             const auto createStruct = reinterpret_cast<LPCREATESTRUCT>(lparam);
-            thisRef = reinterpret_cast<AlwaysOnTop*>(createStruct->lpCreateParams);
+            thisRef = static_cast<AlwaysOnTop*>(createStruct->lpCreateParams);
             SetWindowLongPtr(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(thisRef));
         }
 
@@ -37,28 +39,49 @@ private:
     enum class HotkeyId : int
     {
         Pin = 1,
+        IncreaseOpacity = 2,
+        DecreaseOpacity = 3,
     };
 
     static inline AlwaysOnTop* s_instance = nullptr;
     std::vector<HWINEVENTHOOK> m_staticWinEventHooks{};
+    std::vector<HWINEVENTHOOK> m_systemMenuWinEventHooks{};
     Sound m_sound;
     VirtualDesktopUtils m_virtualDesktopUtils;
 
     HWND m_window{ nullptr };
     HINSTANCE m_hinstance;
     std::map<HWND, std::unique_ptr<WindowBorder>> m_topmostWindows{};
+    
+    // Store original window layered state for proper restoration
+    struct WindowLayeredState {
+        bool hadLayeredStyle = false;
+        BYTE originalAlpha = 255;
+        bool usedColorKey = false;
+        COLORREF colorKey = 0;
+    };
+    std::map<HWND, WindowLayeredState> m_windowOriginalLayeredState{};
+    
     HANDLE m_hPinEvent;
+    HANDLE m_hTerminateEvent;
+    HANDLE m_hIncreaseOpacityEvent;
+    HANDLE m_hDecreaseOpacityEvent;
+    DWORD m_mainThreadId;
     std::thread m_thread;
     const bool m_useCentralizedLLKH;
     bool m_running = true;
+    HWND m_lastSystemMenuWindow{ nullptr };
+    std::unique_ptr<notifications::NotificationUtil> m_notificationUtil;
 
     LRESULT WndProc(HWND, UINT, WPARAM, LPARAM) noexcept;
     void HandleWinHookEvent(WinHookEvent* data) noexcept;
+    void UpdateSystemMenuItem(HWND window) const noexcept;
     
     bool InitMainWindow();
     void RegisterHotkey() const;
     void RegisterLLKH();
     void SubscribeToEvents();
+    void UpdateSystemMenuEventHooks(bool enable);
 
     void ProcessCommand(HWND window);
     void StartTrackingTopmostWindows();
@@ -73,6 +96,12 @@ private:
     bool UnpinTopmostWindow(HWND window) const noexcept;
     bool AssignBorder(HWND window);
     void RefreshBorders();
+
+    // Transparency methods
+    HWND ResolveTransparencyTargetWindow(HWND window);
+    void StepWindowTransparency(HWND window, int delta);
+    void ApplyWindowAlpha(HWND window, int percentage);
+    void RestoreWindowAlpha(HWND window);
 
     virtual void SettingsUpdate(SettingId type) override;
 

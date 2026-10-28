@@ -4,6 +4,7 @@
 
 using System;
 using System.Text.Json;
+
 using Microsoft.PowerToys.Settings.UI.Library;
 using Microsoft.PowerToys.Settings.UI.UnitTests.BackwardsCompatibility;
 using Microsoft.PowerToys.Settings.UI.UnitTests.Mocks;
@@ -18,9 +19,9 @@ namespace ViewModelTests
     {
         public const string GeneralSettingsFileName = "Test\\PowerRename";
 
-        private Mock<ISettingsUtils> mockGeneralSettingsUtils;
+        private Mock<SettingsUtils> mockGeneralSettingsUtils;
 
-        private Mock<ISettingsUtils> mockPowerRenamePropertiesUtils;
+        private Mock<SettingsUtils> mockPowerRenamePropertiesUtils;
 
         [TestInitialize]
         public void SetUpStubSettingUtils()
@@ -39,7 +40,7 @@ namespace ViewModelTests
         [DataRow("v0.22.0", "power-rename-settings.json")]
         public void OriginalFilesModificationTest(string version, string fileName)
         {
-            var settingPathMock = new Mock<ISettingsPath>();
+            var settingPathMock = new Mock<SettingPath>();
             var mockIOProvider = BackCompatTestProperties.GetModuleIOProvider(version, PowerRenameSettings.ModuleName, fileName);
 
             var mockSettingsUtils = new SettingsUtils(mockIOProvider.Object, settingPathMock.Object);

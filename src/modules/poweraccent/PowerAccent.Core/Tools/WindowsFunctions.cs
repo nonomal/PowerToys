@@ -3,12 +3,22 @@
 // See the LICENSE file in the project root for more information.
 
 using System.Runtime.InteropServices;
-using Vanara.PInvoke;
+
+using ManagedCommon;
+using Windows.Win32;
+using Windows.Win32.Graphics.Gdi;
+using Windows.Win32.UI.HiDpi;
+using Windows.Win32.UI.Input.KeyboardAndMouse;
+using Windows.Win32.UI.WindowsAndMessaging;
 
 namespace PowerAccent.Core.Tools;
 
 internal static class WindowsFunctions
 {
+    // Mirrors PowertoyModuleIface::CENTRALIZED_KEYBOARD_HOOK_DONT_TRIGGER_FLAG (0x110) so the
+    // centralized keyboard hook ignores the keys PowerAccent injects and they don't re-trigger shortcuts.
+    private const nuint PowerToysInjectedTag = 0x110;
+
     public static void Insert(string s, bool back = false)
     {
         unsafe
@@ -16,72 +26,158 @@ internal static class WindowsFunctions
             if (back)
             {
                 // Split in 2 different SendInput (Powershell doesn't take back issue)
-                var inputsBack = new User32.INPUT[]
+                var inputsBack = new INPUT[]
                 {
-                    new User32.INPUT { type = User32.INPUTTYPE.INPUT_KEYBOARD, ki = new User32.KEYBDINPUT { wVk = (ushort)User32.VK.VK_BACK } },
-                    new User32.INPUT { type = User32.INPUTTYPE.INPUT_KEYBOARD, ki = new User32.KEYBDINPUT { wVk = (ushort)User32.VK.VK_BACK, dwFlags = User32.KEYEVENTF.KEYEVENTF_KEYUP } },
+                    new INPUT
+                    {
+                        type = INPUT_TYPE.INPUT_KEYBOARD,
+                        Anonymous = new INPUT._Anonymous_e__Union
+                        {
+                            ki = new KEYBDINPUT
+                            {
+                                wVk = VIRTUAL_KEY.VK_BACK,
+                                dwExtraInfo = PowerToysInjectedTag,
+                            },
+                        },
+                    },
+                    new INPUT
+                    {
+                        type = INPUT_TYPE.INPUT_KEYBOARD,
+                        Anonymous = new INPUT._Anonymous_e__Union
+                        {
+                            ki = new KEYBDINPUT
+                            {
+                                wVk = VIRTUAL_KEY.VK_BACK,
+                                dwFlags = KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP,
+                                dwExtraInfo = PowerToysInjectedTag,
+                            },
+                        },
+                    },
                 };
 
-                var temp1 = User32.SendInput((uint)inputsBack.Length, inputsBack, sizeof(User32.INPUT));
-                System.Threading.Thread.Sleep(1); // Some apps, like Terminal, need a little wait to process the sent backspace or they'll ignore it.
+                uint backSent = PInvoke.SendInput(inputsBack, Marshal.SizeOf<INPUT>());
+                if (backSent != (uint)inputsBack.Length)
+                {
+                    Logger.LogError($"SendInput backspace failed: sent {backSent}/{inputsBack.Length}");
+                }
+
+                Thread.Sleep(1); // Some apps, like Terminal, need a little wait to process the sent backspace or they'll ignore it.
             }
 
-            foreach (char c in s)
+            if (s.Length > 0)
             {
-                // Letter
-                var inputsInsert = new User32.INPUT[]
+                var inputsInsert = new INPUT[s.Length * 2];
+                for (int i = 0; i < s.Length; i++)
                 {
-                new User32.INPUT { type = User32.INPUTTYPE.INPUT_KEYBOARD, ki = new User32.KEYBDINPUT { wVk = 0, dwFlags = User32.KEYEVENTF.KEYEVENTF_UNICODE, wScan = c } },
-                new User32.INPUT { type = User32.INPUTTYPE.INPUT_KEYBOARD, ki = new User32.KEYBDINPUT { wVk = 0, dwFlags = User32.KEYEVENTF.KEYEVENTF_UNICODE | User32.KEYEVENTF.KEYEVENTF_KEYUP, wScan = c } },
-                };
-                var temp2 = User32.SendInput((uint)inputsInsert.Length, inputsInsert, sizeof(User32.INPUT));
+                    inputsInsert[i * 2] = new INPUT
+                    {
+                        type = INPUT_TYPE.INPUT_KEYBOARD,
+                        Anonymous = new INPUT._Anonymous_e__Union
+                        {
+                            ki = new KEYBDINPUT
+                            {
+                                wScan = s[i],
+                                dwFlags = KEYBD_EVENT_FLAGS.KEYEVENTF_UNICODE,
+                                dwExtraInfo = PowerToysInjectedTag,
+                            },
+                        },
+                    };
+                    inputsInsert[(i * 2) + 1] = new INPUT
+                    {
+                        type = INPUT_TYPE.INPUT_KEYBOARD,
+                        Anonymous = new INPUT._Anonymous_e__Union
+                        {
+                            ki = new KEYBDINPUT
+                            {
+                                wScan = s[i],
+                                dwFlags = KEYBD_EVENT_FLAGS.KEYEVENTF_UNICODE | KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP,
+                                dwExtraInfo = PowerToysInjectedTag,
+                            },
+                        },
+                    };
+                }
+
+                uint charSent = PInvoke.SendInput(inputsInsert, Marshal.SizeOf<INPUT>());
+                if (charSent != (uint)inputsInsert.Length)
+                {
+                    Logger.LogError($"SendInput character failed: sent {charSent}/{inputsInsert.Length}");
+                }
             }
         }
     }
 
-    public static Point GetCaretPosition()
+    public static void SendArrowKey(bool left)
     {
-        User32.GUITHREADINFO guiInfo = new ();
-        guiInfo.cbSize = (uint)Marshal.SizeOf(guiInfo);
-        User32.GetGUIThreadInfo(0, ref guiInfo);
-        POINT caretPosition = new POINT(guiInfo.rcCaret.left, guiInfo.rcCaret.top);
-        User32.ClientToScreen(guiInfo.hwndCaret, ref caretPosition);
-
-        if (caretPosition.X == 0)
+        var key = left ? VIRTUAL_KEY.VK_LEFT : VIRTUAL_KEY.VK_RIGHT;
+        var inputs = new INPUT[]
         {
-            POINT testPoint;
-            User32.GetCaretPos(out testPoint);
-            return testPoint;
-        }
+            new INPUT
+            {
+                type = INPUT_TYPE.INPUT_KEYBOARD,
+                Anonymous = new INPUT._Anonymous_e__Union
+                {
+                    ki = new KEYBDINPUT
+                    {
+                        wVk = key,
+                        dwFlags = KEYBD_EVENT_FLAGS.KEYEVENTF_EXTENDEDKEY,
+                        dwExtraInfo = PowerToysInjectedTag,
+                    },
+                },
+            },
+            new INPUT
+            {
+                type = INPUT_TYPE.INPUT_KEYBOARD,
+                Anonymous = new INPUT._Anonymous_e__Union
+                {
+                    ki = new KEYBDINPUT
+                    {
+                        wVk = key,
+                        dwFlags = KEYBD_EVENT_FLAGS.KEYEVENTF_EXTENDEDKEY | KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP,
+                        dwExtraInfo = PowerToysInjectedTag,
+                    },
+                },
+            },
+        };
 
-        return caretPosition;
+        uint arrowSent = PInvoke.SendInput(inputs, Marshal.SizeOf<INPUT>());
+        if (arrowSent != (uint)inputs.Length)
+        {
+            Logger.LogError($"SendInput arrow key failed: sent {arrowSent}/{inputs.Length}");
+        }
     }
 
     public static (Point Location, Size Size, double Dpi) GetActiveDisplay()
     {
-        User32.GUITHREADINFO guiInfo = new ();
+        GUITHREADINFO guiInfo = default;
         guiInfo.cbSize = (uint)Marshal.SizeOf(guiInfo);
-        User32.GetGUIThreadInfo(0, ref guiInfo);
-        var res = User32.MonitorFromWindow(guiInfo.hwndActive, User32.MonitorFlags.MONITOR_DEFAULTTONEAREST);
+        PInvoke.GetGUIThreadInfo(0, ref guiInfo);
+        var res = PInvoke.MonitorFromWindow(guiInfo.hwndActive, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST);
 
-        User32.MONITORINFO monitorInfo = new ();
+        MONITORINFO monitorInfo = default;
         monitorInfo.cbSize = (uint)Marshal.SizeOf(monitorInfo);
-        User32.GetMonitorInfo(res, ref monitorInfo);
+        PInvoke.GetMonitorInfo(res, ref monitorInfo);
 
-        double dpi = User32.GetDpiForWindow(guiInfo.hwndActive) / 96d;
+        uint dpiRaw = 96; // Safe default
+        if (PInvoke.GetDpiForMonitor(res, MONITOR_DPI_TYPE.MDT_EFFECTIVE_DPI, out uint dpiX, out _) == 0)
+        {
+            dpiRaw = dpiX;
+        }
 
-        return (monitorInfo.rcWork.Location, monitorInfo.rcWork.Size, dpi);
+        double dpi = dpiRaw / 96d;
+        var location = new Point(monitorInfo.rcWork.left, monitorInfo.rcWork.top);
+        var size = new Size(monitorInfo.rcWork.right - monitorInfo.rcWork.left, monitorInfo.rcWork.bottom - monitorInfo.rcWork.top);
+        return (location, size, dpi);
     }
 
     public static bool IsCapsLockState()
     {
-        var capital = User32.GetKeyState((int)User32.VK.VK_CAPITAL);
+        var capital = PInvoke.GetKeyState((int)VIRTUAL_KEY.VK_CAPITAL);
         return capital != 0;
     }
 
     public static bool IsShiftState()
     {
-        var shift = User32.GetKeyState((int)User32.VK.VK_SHIFT);
+        var shift = PInvoke.GetAsyncKeyState((int)VIRTUAL_KEY.VK_SHIFT);
         return shift < 0;
     }
 }

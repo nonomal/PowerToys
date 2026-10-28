@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information.
 
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Tracing;
 using Microsoft.PowerToys.Telemetry;
 using Microsoft.PowerToys.Telemetry.Events;
@@ -10,9 +11,10 @@ using Microsoft.PowerToys.Telemetry.Events;
 namespace ColorPicker.Telemetry
 {
     [EventData]
+    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)]
     public class ColorPickerSettings : EventBase, IEvent
     {
-        public ColorPickerSettings(IDictionary<string, bool> editorFormats)
+        public ColorPickerSettings(IDictionary<string, KeyValuePair<bool, string>> editorFormats)
         {
             EditorFormats = editorFormats;
             EventName = "ColorPicker_Settings";
@@ -26,7 +28,7 @@ namespace ColorPicker.Telemetry
 
         public bool ShowColorName { get; set; }
 
-        public IDictionary<string, bool> EditorFormats { get; }
+        public IDictionary<string, KeyValuePair<bool, string>> EditorFormats { get; }
 
         public PartA_PrivTags PartA_PrivTags => PartA_PrivTags.ProductAndServiceUsage;
     }

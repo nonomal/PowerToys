@@ -20,13 +20,27 @@ enum struct OverlappingZonesAlgorithm : int
     EnumElements = 4, // number of elements in the enum, not counting this
 };
 
+enum struct LayoutNameLabelPlacement : int
+{
+    TopLeft = 0,
+    TopCenter = 1,
+    TopRight = 2,
+    Center = 3,
+    BottomLeft = 4,
+    BottomCenter = 5,
+    BottomRight = 6,
+    EnumElements = 7, // number of elements in the enum, not counting this
+};
+
 // in reality, this file needs to be kept in sync currently with src/settings-ui/Settings.UI.Library/FZConfigProperties.cs
 struct Settings
 {
     // The values specified here are the defaults.
     bool shiftDrag = true;
     bool mouseSwitch = false;
-    bool displayChange_moveWindows = false;
+    bool mouseMiddleClickSpanningMultipleZones = false;
+    bool mouseWheelLayoutSwitch = false;
+    bool displayOrWorkAreaChange_moveWindows = true;
     bool zoneSetChange_flashZones = false;
     bool zoneSetChange_moveWindows = false;
     bool overrideSnapHotkeys = false;
@@ -43,7 +57,6 @@ struct Settings
     bool makeDraggedWindowTransparent = true;
     bool systemTheme = true;
     bool showZoneNumber = true;
-    bool allowSnapPopupWindows = false;
     bool allowSnapChildWindows = false;
     bool disableRoundCorners = false;
     std::wstring zoneColor = L"#AACDFF";
@@ -51,11 +64,20 @@ struct Settings
     std::wstring zoneHighlightColor = L"#008CFF";
     std::wstring zoneNumberColor = L"#000000";
     int zoneHighlightOpacity = 50;
+    bool layoutNameLabelEnabled = true;
+    LayoutNameLabelPlacement layoutNameLabelPlacement = LayoutNameLabelPlacement::TopCenter;
+    std::wstring layoutNameLabelTextColor = L"#FFFFFF";
+    std::wstring layoutNameLabelBackgroundColor = L"#262626";
+    int layoutNameLabelFontSize = 36;
+    int layoutNameLabelPadding = 12;
+    int layoutNameLabelDuration = 1500; // milliseconds
     OverlappingZonesAlgorithm overlappingZonesAlgorithm = OverlappingZonesAlgorithm::Smallest;
     PowerToysSettings::HotkeyObject editorHotkey = PowerToysSettings::HotkeyObject::from_settings(true, false, false, true, VK_OEM_3);
     bool windowSwitching = true;
     PowerToysSettings::HotkeyObject nextTabHotkey = PowerToysSettings::HotkeyObject::from_settings(true, false, false, false, VK_NEXT);
     PowerToysSettings::HotkeyObject prevTabHotkey = PowerToysSettings::HotkeyObject::from_settings(true, false, false, false, VK_PRIOR);
+    bool monitorRotation = false;
+    PowerToysSettings::HotkeyObject monitorRotationHotkey = PowerToysSettings::HotkeyObject::from_settings(false, false, true, false, 'X');
     std::wstring excludedApps = L"";
     std::vector<std::wstring> excludedAppsArray;
 };
@@ -74,9 +96,17 @@ public:
         std::wstring saveFolderPath = PTSettingsHelper::get_module_save_folder_location(NonLocalizable::ModuleKey);
 #if defined(UNIT_TESTS)
         return saveFolderPath + L"\\test-settings.json";
-#endif
+#else
         return saveFolderPath + L"\\settings.json";
+#endif
     }
+
+#if defined(UNIT_TESTS)
+    inline void SetSettings(const Settings& settings)
+    {
+        m_settings = settings;
+    }
+#endif
 
     void AddObserver(SettingsObserver& observer);
     void RemoveObserver(SettingsObserver& observer);

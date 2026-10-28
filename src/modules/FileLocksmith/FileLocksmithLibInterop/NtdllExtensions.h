@@ -4,6 +4,8 @@
 
 #include "NtdllBase.h"
 
+#include <chrono>
+
 class NtdllExtensions : protected Ntdll
 {
 private:
@@ -11,7 +13,7 @@ private:
     constexpr static size_t MaxResultBufferSize = 1024 * 1024 * 1024;
 
     constexpr static int ObjectNameInformation = 1;
-    constexpr static int SystemHandleInformation = 16;
+    constexpr static int SystemExtendedHandleInformation = 64;
 
     struct MemoryLoopResult
     {
@@ -22,12 +24,11 @@ private:
     // Calls NtQuerySystemInformation and returns a buffer containing the result.
     MemoryLoopResult NtQuerySystemInformationMemoryLoop(ULONG SystemInformationClass);
 
-    std::wstring file_handle_to_kernel_name(HANDLE file_handle, std::vector<BYTE>& buffer);
-
 public:
+    constexpr static std::chrono::milliseconds DefaultHandleStallTimeout{ 200 };
     struct ProcessInfo
     {
-        DWORD pid;
+        DWORD pid = 0;
         std::wstring name;
         std::wstring user;
         std::vector<std::wstring> modules;
@@ -35,8 +36,8 @@ public:
 
     struct HandleInfo
     {
-        DWORD pid;
-        USHORT handle;
+        ULONG_PTR pid;
+        ULONG_PTR handle;
         std::wstring type_name;
         std::wstring kernel_file_name;
     };
@@ -48,7 +49,9 @@ public:
     // Gives the user name of the account running this process
     std::wstring pid_to_user(DWORD pid);
 
-    std::vector<HandleInfo> handles() noexcept;
+    // Returns all open file handles in the system. A handle whose query makes no progress within
+    // stall_timeout is skipped.
+    std::vector<HandleInfo> handles(std::chrono::milliseconds stall_timeout = DefaultHandleStallTimeout) noexcept;
 
     // Returns the list of all processes.
     // On failure, returns an empty vector.

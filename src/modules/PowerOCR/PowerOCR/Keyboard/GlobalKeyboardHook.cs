@@ -6,11 +6,12 @@ using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+
 using static PowerOCR.OSInterop;
 
 namespace PowerOCR.Keyboard;
 
-internal class GlobalKeyboardHook : IDisposable
+internal sealed partial class GlobalKeyboardHook : IDisposable
 {
     private IntPtr _windowsHookHandle;
     private IntPtr _user32LibraryHandle;
@@ -39,7 +40,7 @@ internal class GlobalKeyboardHook : IDisposable
 
     internal event EventHandler<GlobalKeyboardHookEventArgs>? KeyboardPressed;
 
-    protected virtual void Dispose(bool disposing)
+    public void Dispose(bool disposing)
     {
         if (disposing)
         {
@@ -98,18 +99,14 @@ internal class GlobalKeyboardHook : IDisposable
         var wparamTyped = wParam.ToInt32();
         if (Enum.IsDefined(typeof(KeyboardState), wparamTyped))
         {
-            object? o = Marshal.PtrToStructure(lParam, typeof(LowLevelKeyboardInputEvent));
-            if (o is not null)
-            {
-                LowLevelKeyboardInputEvent p = (LowLevelKeyboardInputEvent)o;
+            LowLevelKeyboardInputEvent p = Marshal.PtrToStructure<LowLevelKeyboardInputEvent>(lParam);
 
-                var eventArguments = new GlobalKeyboardHookEventArgs(p, (KeyboardState)wparamTyped);
+            var eventArguments = new GlobalKeyboardHookEventArgs(p, (KeyboardState)wparamTyped);
 
-                EventHandler<GlobalKeyboardHookEventArgs>? handler = KeyboardPressed;
-                handler?.Invoke(this, eventArguments);
+            EventHandler<GlobalKeyboardHookEventArgs>? handler = KeyboardPressed;
+            handler?.Invoke(this, eventArguments);
 
-                fEatKeyStroke = eventArguments.Handled;
-            }
+            fEatKeyStroke = eventArguments.Handled;
         }
 
         return fEatKeyStroke ? (IntPtr)1 : CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);

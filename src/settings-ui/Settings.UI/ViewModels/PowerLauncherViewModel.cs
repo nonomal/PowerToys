@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information.
 
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
@@ -12,14 +13,16 @@ using System.Text.Json;
 using System.Windows.Input;
 using global::PowerToys.GPOWrapper;
 using ManagedCommon;
+using Microsoft.PowerToys.Settings.UI.Helpers;
 using Microsoft.PowerToys.Settings.UI.Library;
 using Microsoft.PowerToys.Settings.UI.Library.Helpers;
 using Microsoft.PowerToys.Settings.UI.Library.Interfaces;
 using Microsoft.PowerToys.Settings.UI.Library.ViewModels.Commands;
+using Microsoft.PowerToys.Settings.UI.SerializationContext;
 
 namespace Microsoft.PowerToys.Settings.UI.ViewModels
 {
-    public class PowerLauncherViewModel : Observable
+    public partial class PowerLauncherViewModel : PageViewModelBase, IDisposable
     {
         private int _themeIndex;
         private int _monitorPositionIndex;
@@ -28,12 +31,15 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
         private bool _enabledStateIsGPOConfigured;
         private bool _isEnabled;
         private string _searchText;
+        private bool _hotkeyChanged;
 
         private GeneralSettings GeneralSettingsConfig { get; set; }
 
         private PowerLauncherSettings settings;
 
         public delegate void SendCallback(PowerLauncherSettings settings);
+
+        protected override string ModuleName => PowerLauncherSettings.ModuleName;
 
         private readonly SendCallback callback;
 
@@ -49,33 +55,20 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
         {
             if (settings == null)
             {
-                throw new ArgumentException("settings argument can not be null");
+                throw new ArgumentException("settings argument cannot be null");
             }
 
             this.settings = settings;
             this.isDark = isDark;
 
             // To obtain the general Settings configurations of PowerToys
-            if (settingsRepository == null)
-            {
-                throw new ArgumentNullException(nameof(settingsRepository));
-            }
+            ArgumentNullException.ThrowIfNull(settingsRepository);
 
             GeneralSettingsConfig = settingsRepository.SettingsConfig;
 
-            _enabledGpoRuleConfiguration = GPOWrapper.GetConfiguredPowerLauncherEnabledValue();
-            if (_enabledGpoRuleConfiguration == GpoRuleConfigured.Disabled || _enabledGpoRuleConfiguration == GpoRuleConfigured.Enabled)
-            {
-                // Get the enabled state from GPO.
-                _enabledStateIsGPOConfigured = true;
-                _isEnabled = _enabledGpoRuleConfiguration == GpoRuleConfigured.Enabled;
-            }
-            else
-            {
-                _isEnabled = GeneralSettingsConfig.Enabled.PowerLauncher;
-            }
+            InitializeEnabledValue();
 
-            // set the callback functions value to hangle outgoing IPC message.
+            // set the callback functions value to handle outgoing IPC message.
             SendConfigMSG = ipcMSGCallBackFunc;
             callback = (PowerLauncherSettings s) =>
             {
@@ -86,7 +79,7 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
                         CultureInfo.InvariantCulture,
                         "{{ \"powertoys\": {{ \"{0}\": {1} }} }}",
                         PowerLauncherSettings.ModuleName,
-                        JsonSerializer.Serialize(s)));
+                        JsonSerializer.Serialize(s, SourceGenerationContextContext.Default.PowerLauncherSettings)));
             };
 
             switch (settings.Properties.Theme)
@@ -115,7 +108,32 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
                     break;
             }
 
-            SearchPluginsCommand = new RelayCommand(SearchPlugins);
+            SearchPluginsCommand = new Library.ViewModels.Commands.RelayCommand(SearchPlugins);
+        }
+
+        private void InitializeEnabledValue()
+        {
+            _enabledGpoRuleConfiguration = GPOWrapper.GetConfiguredPowerLauncherEnabledValue();
+            if (_enabledGpoRuleConfiguration == GpoRuleConfigured.Disabled || _enabledGpoRuleConfiguration == GpoRuleConfigured.Enabled)
+            {
+                // Get the enabled state from GPO.
+                _enabledStateIsGPOConfigured = true;
+                _isEnabled = _enabledGpoRuleConfiguration == GpoRuleConfigured.Enabled;
+            }
+            else
+            {
+                _isEnabled = GeneralSettingsConfig.Enabled.PowerLauncher;
+            }
+        }
+
+        public override Dictionary<string, HotkeySettings[]> GetAllHotkeySettings()
+        {
+            var hotkeysDict = new Dictionary<string, HotkeySettings[]>
+            {
+                [ModuleName] = [OpenPowerLauncher],
+            };
+
+            return hotkeysDict;
         }
 
         private void OnPluginInfoChange(object sender, PropertyChangedEventArgs e)
@@ -130,6 +148,7 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             }
 
             OnPropertyChanged(nameof(ShowAllPluginsDisabledWarning));
+            OnPropertyChanged(nameof(ShowPluginsAreGpoManagedInfo));
             UpdateSettings();
         }
 
@@ -143,6 +162,12 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
         {
             // Notify UI of property change
             OnPropertyChanged(propertyName);
+
+            // Since PowerLauncher registers its hotkeys independently within the module process,
+            // the runner is notified to update PowerLauncher’s hotkeys only when changes occur.
+            // This prevents incorrect conflict detection results.
+            settings.Properties.HotkeyChanged = _hotkeyChanged;
+            _hotkeyChanged = false;
 
             callback(settings);
         }
@@ -169,10 +194,20 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
                     OnPropertyChanged(nameof(EnablePowerLauncher));
                     OnPropertyChanged(nameof(ShowAllPluginsDisabledWarning));
                     OnPropertyChanged(nameof(ShowPluginsLoadingMessage));
+                    OnPropertyChanged(nameof(ShowPluginsAreGpoManagedInfo));
                     OutGoingGeneralSettings outgoing = new OutGoingGeneralSettings(GeneralSettingsConfig);
                     SendConfigMSG(outgoing.ToString());
                 }
             }
+        }
+
+        public void RefreshEnabledState()
+        {
+            InitializeEnabledValue();
+            OnPropertyChanged(nameof(EnablePowerLauncher));
+            OnPropertyChanged(nameof(ShowAllPluginsDisabledWarning));
+            OnPropertyChanged(nameof(ShowPluginsLoadingMessage));
+            OnPropertyChanged(nameof(ShowPluginsAreGpoManagedInfo));
         }
 
         public bool IsEnabledGpoConfigured
@@ -306,7 +341,8 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             {
                 if (settings.Properties.OpenPowerLauncher != value)
                 {
-                    settings.Properties.OpenPowerLauncher = value;
+                    settings.Properties.OpenPowerLauncher = value ?? settings.Properties.DefaultOpenPowerLauncher;
+                    _hotkeyChanged = true;
                     UpdateSettings();
                 }
             }
@@ -442,7 +478,7 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             {
                 if (settings.Properties.OpenFileLocation != value)
                 {
-                    settings.Properties.OpenFileLocation = value;
+                    settings.Properties.OpenFileLocation = value ?? settings.Properties.DefaultOpenFileLocation;
                     UpdateSettings();
                 }
             }
@@ -459,7 +495,7 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             {
                 if (settings.Properties.CopyPathLocation != value)
                 {
-                    settings.Properties.CopyPathLocation = value;
+                    settings.Properties.CopyPathLocation = value ?? settings.Properties.DefaultCopyPathLocation;
                     UpdateSettings();
                 }
             }
@@ -533,6 +569,91 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             }
         }
 
+        public bool TabSelectsContextButtons
+        {
+            get
+            {
+                return settings.Properties.TabSelectsContextButtons;
+            }
+
+            set
+            {
+                if (settings.Properties.TabSelectsContextButtons != value)
+                {
+                    settings.Properties.TabSelectsContextButtons = value;
+                    UpdateSettings();
+                }
+            }
+        }
+
+        public bool GenerateThumbnailsFromFiles
+        {
+            get
+            {
+                return settings.Properties.GenerateThumbnailsFromFiles;
+            }
+
+            set
+            {
+                if (settings.Properties.GenerateThumbnailsFromFiles != value)
+                {
+                    settings.Properties.GenerateThumbnailsFromFiles = value;
+                    UpdateSettings();
+                }
+            }
+        }
+
+        public bool UsePinyin
+        {
+            get
+            {
+                return settings.Properties.UsePinyin;
+            }
+
+            set
+            {
+                if (settings.Properties.UsePinyin != value)
+                {
+                    settings.Properties.UsePinyin = value;
+                    UpdateSettings();
+                }
+            }
+        }
+
+        public int ShowPluginsOverviewIndex
+        {
+            get
+            {
+                return settings.Properties.ShowPluginsOverview;
+            }
+
+            set
+            {
+                if (settings.Properties.ShowPluginsOverview != value)
+                {
+                    settings.Properties.ShowPluginsOverview = value;
+                    UpdateSettings();
+                }
+            }
+        }
+
+        public int TitleFontSize
+        {
+            get
+            {
+                return settings.Properties.TitleFontSize;
+            }
+
+            set
+            {
+                if (settings.Properties.TitleFontSize != value)
+                {
+                    settings.Properties.TitleFontSize = value;
+                    UpdateSettings();
+                }
+            }
+        }
+
         private ObservableCollection<PowerLauncherPluginViewModel> _plugins;
 
         public ObservableCollection<PowerLauncherPluginViewModel> Plugins
@@ -552,9 +673,14 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             }
         }
 
+        public bool ShowPluginsAreGpoManagedInfo
+        {
+            get => EnablePowerLauncher && settings.Plugins.Any() && Plugins.Any(x => x.EnabledGpoRuleIsConfigured);
+        }
+
         public bool ShowAllPluginsDisabledWarning
         {
-            get => EnablePowerLauncher && settings.Plugins.Any() && settings.Plugins.All(x => x.Disabled);
+            get => EnablePowerLauncher && settings.Plugins.Any() && Plugins.All(x => x.Disabled);
         }
 
         public bool ShowPluginsLoadingMessage

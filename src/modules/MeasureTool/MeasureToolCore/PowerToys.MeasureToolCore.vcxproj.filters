@@ -38,6 +38,7 @@
     <ClInclude Include="resource.h" />
     <ClInclude Include="CoordinateSystemConversion.h" />
     <ClInclude Include="Measurement.h" />
+    <ClInclude Include="MeasurementLogic.h" />
     <ClInclude Include="DxgiAPI.h" />
   </ItemGroup>
   <ItemGroup>
@@ -54,5 +55,8 @@
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="PowerToys.MeasureToolCore.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Natvis Include="$(MSBuildThisFileDirectory)..\..\natvis\wil.natvis" />
   </ItemGroup>
 </Project>
